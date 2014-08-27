@@ -2,24 +2,38 @@ package conf
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 )
 
 type Configuration struct {
-	AsteriskHost, AMILogin, AMIPassword string
+	AsteriskHost, AMILogin string
+	AMIPassword, Secret    string
+	AgencyId, Api          string
+	Portals                map[string]string
 }
 
-func GetConf(confFile string) (*Configuration, error) {
+func initConf(confFile string) Configuration {
 	file, err := os.Open(confFile)
 	if err != nil {
-		return nil, err
+		log.Fatalln(err)
 	}
 	defer file.Close()
 
 	conf := Configuration{}
 	err = json.NewDecoder(file).Decode(&conf)
 	if err != nil {
-		return nil, err
+		log.Fatalln(err)
 	}
-	return &conf, nil
+	return conf
+}
+
+var conf Configuration
+
+func GetConf() *Configuration {
+	return &conf
+}
+
+func init() {
+	conf = initConf("conf.json")
 }

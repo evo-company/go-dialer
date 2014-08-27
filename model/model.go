@@ -25,8 +25,29 @@ type Queue struct {
 	StateInterface string `param:"state_interface"`
 }
 
+type DbGetter struct {
+	Family string `param:"family"`
+	Key    string `param:"key"`
+}
+
+type PhoneCall struct {
+	CallingPhone string `param:"calling_phone"`
+	Country      string `param:"country"`
+	Id           string `param:"id"`
+	InnerNumber  string `param:"inner_number"`
+	ReviewHref   string `param:"review_href"`
+}
+
+type SignedData struct {
+	Data string
+}
+
 func GetStructFromParams(r *http.Request, s interface{}) (err error) {
-	r.ParseForm()
-	err = param.Parse(r.Form, s)
+	if (*r).Method == "POST" {
+		r.ParseForm()
+		err = param.Parse(r.Form, s)
+	} else {
+		err = param.Parse(r.URL.Query(), s)
+	}
 	return
 }
