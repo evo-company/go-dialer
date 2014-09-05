@@ -1,11 +1,9 @@
 {
-    "asteriskHost": "localhost:5038",
+    "asteriskHost": "127.0.0.1:5038",
     "amiLogin": "aursulenko",
     "amiPassword": "123qwe",
-    "agencyId": "",
+    "companyId": "",
     "secret": "156fdecd9f61fd0d22b139cb144fe54f",
-    "portals": {
-        "ua": "http://my.example.com:5000/"
-    },
+    "countries": ["ua"],
     "api": "agency/api/manager/"
 }

@@ -6,11 +6,23 @@ import (
 	"os"
 )
 
+var PORTAL_MAP = map[string]string{
+	"ua": "http://my.example.com:5000/",
+	// "ua": "https://my.prom.ua/",
+	"ru": "https://my.tiu.ru/",
+	"by": "https://my.deal.by/",
+	"kz": "https://my.satu.kz/",
+}
+
 type Configuration struct {
 	AsteriskHost, AMILogin string
 	AMIPassword, Secret    string
-	AgencyId, Api          string
-	Portals                map[string]string
+	CompanyId, Api         string
+	Countries              []string
+}
+
+func (c Configuration) GetApi(country string, apiKey string) string {
+	return PORTAL_MAP[country] + c.Api + apiKey
 }
 
 func initConf(confFile string) Configuration {

@@ -1,8 +1,8 @@
 package ami
 
 import (
-	"code.google.com/p/gami"
 	"github.com/warik/dialer/conf"
+	"github.com/warik/gami"
 	"log"
 	"net"
 )

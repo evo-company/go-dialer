@@ -1,32 +1,37 @@
 package main
 
 import (
-	"code.google.com/p/gami"
 	"crypto/hmac"
 	"crypto/sha1"
-	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/boltdb/bolt"
 	"github.com/kr/pretty"
 	"github.com/parnurzeal/gorequest"
 	"github.com/vmihailenco/signer"
 	"github.com/warik/dialer/ami"
 	"github.com/warik/dialer/conf"
 	"github.com/warik/dialer/model"
+	"github.com/warik/gami"
 	"github.com/zenazn/goji"
 	"github.com/zenazn/goji/graceful"
 	"hash"
+	"log"
 	"net/http"
-	"os"
+	_ "net/http/pprof"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const (
 	REQUEST_TIMEOUT   = 5
-	REMOTE_ERROR_TEXT = "Error on remote server"
-	AMI_LOG_FILE      = "ami_log.csv"
+	CDR_READ_TIMEOUT  = 30 * time.Second
+	REMOTE_ERROR_TEXT = "Error on remote server, status code - %v"
+	CDR_DB_FILE       = "cdr_log.db"
+	HANDLERS_COUNT    = 1
+	BOLT_CDR_BUCKET   = "CdrBucket"
 )
 
 type Response map[string]interface{}
@@ -39,52 +44,92 @@ func (r Response) String() string {
 	return string(b)
 }
 
-func cleanAmi() {
+func clean(finishChannels []chan struct{}) {
+	for _, channel := range finishChannels {
+		close(channel)
+	}
 	ami.GetAMI().Logoff()
 }
 
-func amiMessageHandler(mchan chan gami.Message) {
+func amiMessageHandler(mchan chan gami.Message, db *bolt.DB, finishChan <-chan struct{}) {
 	for {
-		m := <-mchan
-		pretty.Log("Handling message from AMI...\n", m)
-		if m["Event"] != "Cdr" {
+		select {
+		case <-finishChan:
+			pretty.Log("Finishing amiMessageHandler")
 			return
-		}
-		for _, domain := range conf.GetConf().Portals {
-			go logAmiMessage(m, domain+conf.GetConf().Api+"save_phone_call")
+		case m := <-mchan:
+			_ = db.Update(func(tx *bolt.Tx) error {
+				b, err := tx.CreateBucketIfNotExists([]byte(BOLT_CDR_BUCKET))
+				if err != nil {
+					pretty.Println(err)
+					mchan <- m
+				}
+
+				value, _ := json.Marshal(m)
+				if err := b.Put([]byte(m["UniqueID"]), value); err != nil {
+					pretty.Println(err)
+					mchan <- m
+				}
+				return nil
+			})
 		}
 	}
 }
 
-func logAmiMessage(m gami.Message, url string) {
-	if _, err := sendRequest(m, url, "POST"); err != nil {
-		var file *os.File
-		if _, err := os.Stat(AMI_LOG_FILE); os.IsNotExist(err) {
-			file, err = os.Create(AMI_LOG_FILE)
-			if err != nil {
-				pretty.Log(err)
-				return
-			}
-		} else {
-			file, err = os.OpenFile(AMI_LOG_FILE, os.O_APPEND|os.O_WRONLY, 0600)
-			if err != nil {
-				pretty.Log(err)
-				return
+func cdrReader(cdrChan chan<- gami.Message, db *bolt.DB, finishChan <-chan struct{},
+	ticker *time.Ticker) {
+	for {
+		select {
+		case <-finishChan:
+			pretty.Log("Finishing cdrReader")
+			ticker.Stop()
+			return
+		case <-ticker.C:
+			_ = db.View(func(tx *bolt.Tx) error {
+				b := tx.Bucket([]byte(BOLT_CDR_BUCKET))
+				if b == nil {
+					return nil
+				}
+				pretty.Log("Reading data from db. Cdr count - ", strconv.Itoa(b.Stats().KeyN))
+				c := b.Cursor()
+				for k, v := c.First(); k != nil; k, v = c.Next() {
+					m := gami.Message{}
+					_ = json.Unmarshal(v, &m)
+					cdrChan <- m
+				}
+				return nil
+			})
+		}
+	}
+}
+
+func cdrHandler(cdrChan <-chan gami.Message, db *bolt.DB, finishChan <-chan struct{}, i int) {
+	for {
+		select {
+		case <-finishChan:
+			pretty.Log("Finishing cdrHandler", strconv.Itoa(i))
+			return
+		case m := <-cdrChan:
+			pretty.Log("Processing message -", m["UniqueID"])
+			for _, country := range conf.GetConf().Countries {
+				url := conf.GetConf().GetApi(country, "save_phone_call")
+				if _, err := sendRequest(m, url, "POST"); err == nil {
+					_ = db.Update(func(tx *bolt.Tx) error {
+						b := tx.Bucket([]byte(BOLT_CDR_BUCKET))
+						if err := b.Delete([]byte(m["UniqueID"])); err != nil {
+							pretty.Log("Error while deleting message - ", m["UniqueID"])
+						}
+						return nil
+					})
+					break
+				}
 			}
 		}
-		defer file.Close()
-
-		w := csv.NewWriter(file)
-		w.Write([]string{"", m["Source"], m["Destination"], m["DestinationContext"], m["CallerID"],
-			m["Channel"], m["DestinationChannel"], m["LastApplication"], m["LastData"],
-			m["StartTime"], m["AnswerTime"], m["EndTime"], m["Duration"], m["BillableSeconds"],
-			m["Disposition"], m["AMAFlags"], m["UniqueID"], ""})
-		w.Flush()
 	}
 }
 
 func sendRequest(m map[string]string, url string, method string) (string, error) {
-	m["AgencyId"] = conf.GetConf().AgencyId
+	m["CompanyId"] = conf.GetConf().CompanyId
 	signedData, err := signData(m)
 	if err != nil {
 		return "", err
@@ -101,14 +146,11 @@ func sendRequest(m map[string]string, url string, method string) (string, error)
 	resp, respBody, errs := request.Timeout(REQUEST_TIMEOUT * time.Second).End()
 
 	if len(errs) != 0 {
-		for _, err := range errs {
-			pretty.Log(err.Error())
-		}
 		return "", errs[0]
 	}
 
 	if resp.StatusCode != 200 {
-		return "", errors.New(REMOTE_ERROR_TEXT)
+		return "", errors.New(fmt.Sprintf(REMOTE_ERROR_TEXT, resp.StatusCode))
 	}
 
 	return respBody, nil
@@ -151,24 +193,43 @@ func writeResponse(
 	fmt.Fprint(w, Response{"status": status, "response": resp[dataKey]})
 }
 
-func init() {
+func main() {
+	db, err := bolt.Open(CDR_DB_FILE, 0600, nil)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer db.Close()
+
+	finishChannels := []chan struct{}{make(chan struct{})}
+
 	amiMsgChan := make(chan gami.Message)
 	dh := func(m gami.Message) {
 		amiMsgChan <- m
 	}
 	ami.GetAMI().RegisterHandler("Cdr", &dh)
-	go amiMessageHandler(amiMsgChan)
-}
+	go amiMessageHandler(amiMsgChan, db, finishChannels[len(finishChannels)-1])
 
-func main() {
+	cdrChan := make(chan gami.Message)
+	finishChannels = append(finishChannels, make(chan struct{}))
+	ticker := time.NewTicker(CDR_READ_TIMEOUT)
+	go cdrReader(cdrChan, db, finishChannels[len(finishChannels)-1], ticker)
+
+	for i := 0; i < HANDLERS_COUNT; i++ {
+		finishChannels = append(finishChannels, make(chan struct{}))
+		go cdrHandler(cdrChan, db, finishChannels[len(finishChannels)-1], i)
+	}
+
 	initRoutes()
-	graceful.PostHook(cleanAmi)
+	graceful.PostHook(func() {
+		clean(finishChannels)
+	})
 	goji.Serve()
 }
 
 func initRoutes() {
 	goji.Get("/", imUp)
 	goji.Get("/ping-asterisk", pingAsterisk)
+	goji.Post("/shutdown", shutdown)
 
 	//API for prom
 	goji.Get("/show_inuse", showInuse)
@@ -215,9 +276,7 @@ func withStructParams(i interface{}, h func(interface{}, http.ResponseWriter, *h
 func managerCallAfterHours(p interface{}, w http.ResponseWriter, r *http.Request) {
 	phoneCall := (*p.(*model.PhoneCall))
 	payload := map[string]string{"calling_phone": phoneCall.CallingPhone}
-	url := conf.GetConf().Portals[phoneCall.Country] +
-		conf.GetConf().Api + "manager_call_after_hours"
-
+	url := conf.GetConf().GetApi(phoneCall.Country, "manager_call_after_hours")
 	resp, err := sendRequest(payload, url, "POST")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -232,9 +291,7 @@ func showCallingReview(p interface{}, w http.ResponseWriter, r *http.Request) {
 		"inner_number": phoneCall.InnerNumber,
 		"review_href":  phoneCall.ReviewHref,
 	}
-	url := conf.GetConf().Portals[phoneCall.Country] +
-		conf.GetConf().Api + "show_calling_review_popup_to_manager"
-
+	url := conf.GetConf().GetApi(phoneCall.Country, "show_calling_review_popup_to_manager")
 	resp, err := sendRequest(payload, url, "POST")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -249,9 +306,7 @@ func showCallingPopup(p interface{}, w http.ResponseWriter, r *http.Request) {
 		"inner_number":  phoneCall.InnerNumber,
 		"calling_phone": phoneCall.CallingPhone,
 	}
-	url := conf.GetConf().Portals[phoneCall.Country] +
-		conf.GetConf().Api + "show_calling_popup_to_manager"
-
+	url := conf.GetConf().GetApi(phoneCall.Country, "show_calling_popup_to_manager")
 	resp, err := sendRequest(payload, url, "POST")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -263,8 +318,7 @@ func showCallingPopup(p interface{}, w http.ResponseWriter, r *http.Request) {
 func managerPhoneForCompany(p interface{}, w http.ResponseWriter, r *http.Request) {
 	phoneCall := (*p.(*model.PhoneCall))
 	payload := map[string]string{"id": phoneCall.Id}
-	url := conf.GetConf().Portals[phoneCall.Country] + conf.GetConf().Api + "manager_phone_for_company"
-
+	url := conf.GetConf().GetApi(phoneCall.Country, "manager_phone_for_company")
 	resp, err := sendRequest(payload, url, "GET")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -276,8 +330,7 @@ func managerPhoneForCompany(p interface{}, w http.ResponseWriter, r *http.Reques
 func managerPhone(p interface{}, w http.ResponseWriter, r *http.Request) {
 	phoneCall := (*p.(*model.PhoneCall))
 	payload := map[string]string{"calling_phone": phoneCall.CallingPhone}
-	url := conf.GetConf().Portals[phoneCall.Country] + conf.GetConf().Api + "manager_phone"
-
+	url := conf.GetConf().GetApi(phoneCall.Country, "manager_phone")
 	resp, err := sendRequest(payload, url, "GET")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -377,6 +430,10 @@ func placeCall(p interface{}, w http.ResponseWriter, r *http.Request) {
 	} else {
 		writeResponse(w, <-cbc, true, "Message")
 	}
+}
+
+func shutdown(w http.ResponseWriter, r *http.Request) {
+	graceful.Shutdown()
 }
 
 func pingAsterisk(w http.ResponseWriter, r *http.Request) {
