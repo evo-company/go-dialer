@@ -4,6 +4,16 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"time"
+)
+
+const (
+	REQUEST_TIMEOUT   = 5
+	CDR_READ_TIMEOUT  = 30 * time.Second
+	REMOTE_ERROR_TEXT = "Error on remote server, status code - %v"
+	CDR_DB_FILE       = "cdr_log.db"
+	HANDLERS_COUNT    = 2
+	BOLT_CDR_BUCKET   = "CdrBucket"
 )
 
 var PORTAL_MAP = map[string]string{

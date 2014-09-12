@@ -1,10 +1,22 @@
 package model
 
 import (
+	"encoding/json"
 	"fmt"
-	"github.com/zenazn/goji/param"
 	"net/http"
+
+	"github.com/zenazn/goji/param"
 )
+
+type Response map[string]interface{}
+
+func (r Response) String() string {
+	b, err := json.Marshal(r)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
 
 type Call struct {
 	Inline string `param:"inline"`
@@ -42,9 +54,13 @@ type SignedData struct {
 	Data string
 }
 
+type Cdr struct {
+	Id string `param:"id"`
+}
+
 func GetStructFromParams(r *http.Request, s interface{}) (err error) {
 	if (*r).Method == "POST" {
-		r.ParseForm()
+		err = r.ParseForm()
 		err = param.Parse(r.Form, s)
 	} else {
 		err = param.Parse(r.URL.Query(), s)
