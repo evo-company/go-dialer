@@ -22,7 +22,7 @@ import (
 func getCallback() (cb func(gami.Message), cbc chan gami.Message) {
 	cbc = make(chan gami.Message)
 	cb = func(m gami.Message) {
-		pretty.Log("Handling response...\n", m)
+		pretty.Log("Handling response...")
 		cbc <- m
 	}
 	return
@@ -49,13 +49,16 @@ func main() {
 
 	cdrChan := make(chan gami.Message)
 	finishChannels = append(finishChannels, make(chan struct{}))
-	ticker := time.NewTicker(conf.CDR_READ_TIMEOUT)
+	ticker := time.NewTicker(conf.CDR_READ_INTERVAL)
 	go CdrReader(cdrChan, finishChannels[len(finishChannels)-1], ticker)
 
 	for i := 0; i < conf.HANDLERS_COUNT; i++ {
 		finishChannels = append(finishChannels, make(chan struct{}))
 		go CdrHandler(cdrChan, finishChannels[len(finishChannels)-1], i)
 	}
+
+	finishChannels = append(finishChannels, make(chan struct{}))
+	go DbHandler(finishChannels[len(finishChannels)-1])
 
 	initRoutes()
 	graceful.PostHook(func() {
@@ -72,14 +75,14 @@ func initRoutes() {
 	goji.Post("/delete_cdr", withStructParams(new(model.Cdr), deleteCdr))
 
 	//API for prom
-	goji.Get("/show_inuse", showInuse)
-	goji.Get("/show_channels", showChannels)
-	goji.Get("/queue_status", queueStatus)
-	goji.Get("/db_get", withStructParams(new(model.DbGetter), dbGet))
-	goji.Post("/call", withStructParams(new(model.Call), placeCall))
-	goji.Post("/spy", withStructParams(new(model.Call), placeSpy))
-	goji.Post("/queue_add", withStructParams(new(model.Queue), queueAdd))
-	goji.Post("/queue_remove", withStructParams(new(model.Queue), queueRemove))
+	goji.Get("/show_inuse", withSignedParams(new(model.DummyStruct), showInuse))
+	goji.Get("/show_channels", withSignedParams(new(model.DummyStruct), showChannels))
+	goji.Get("/queue_status", withSignedParams(new(model.DummyStruct), queueStatus))
+	goji.Get("/db_get", withSignedParams(new(model.DbGetter), dbGet))
+	goji.Post("/call", withSignedParams(new(model.Call), placeCall))
+	goji.Post("/spy", withSignedParams(new(model.Call), placeSpy))
+	goji.Post("/queue_add", withSignedParams(new(model.Queue), queueAdd))
+	goji.Post("/queue_remove", withSignedParams(new(model.Queue), queueRemove))
 
 	// API for asterisk
 	goji.Get("/manager_phone", withStructParams(new(model.PhoneCall), managerPhone))
@@ -93,6 +96,7 @@ func initRoutes() {
 		withStructParams(new(model.PhoneCall), managerCallAfterHours))
 
 	goji.Use(JSONReponse)
+	goji.Use(AllowedRemoteAddress)
 }
 
 func JSONReponse(h http.Handler) http.Handler {
@@ -103,7 +107,37 @@ func JSONReponse(h http.Handler) http.Handler {
 	return http.HandlerFunc(fn)
 }
 
-func withStructParams(i interface{}, h func(interface{}, http.ResponseWriter, *http.Request)) http.HandlerFunc {
+func AllowedRemoteAddress(h http.Handler) http.Handler {
+	fn := func(w http.ResponseWriter, r *http.Request) {
+		for _, addr := range conf.GetConf().AllowedRemoteAddrs {
+			if addr == strings.Split(r.RemoteAddr, ":")[0] {
+				h.ServeHTTP(w, r)
+				return
+			}
+		}
+		http.Error(w, "Not allowed remote address", http.StatusUnauthorized)
+	}
+	return http.HandlerFunc(fn)
+}
+
+func withSignedParams(i interface{}, h func(interface{}, http.ResponseWriter,
+	*http.Request)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		signedData := new(model.SignedInputData)
+		if err := model.GetStructFromParams(r, signedData); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := UnsignData(i, (*signedData)); err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+			return
+		}
+		h(i, w, r)
+	}
+}
+
+func withStructParams(i interface{}, h func(interface{}, http.ResponseWriter,
+	*http.Request)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := model.GetStructFromParams(r, i); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -114,7 +148,7 @@ func withStructParams(i interface{}, h func(interface{}, http.ResponseWriter, *h
 }
 
 func cdrNumber(w http.ResponseWriter, r *http.Request) {
-	_ = db.GetDB().Read(func(tx *bolt.Tx) error {
+	db.GetDB().View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(conf.BOLT_CDR_BUCKET))
 		if b == nil {
 			fmt.Fprint(w, model.Response{"status": "no such bucket"})
@@ -143,7 +177,8 @@ func managerCallAfterHours(p interface{}, w http.ResponseWriter, r *http.Request
 	phoneCall := (*p.(*model.PhoneCall))
 	payload := map[string]string{"calling_phone": phoneCall.CallingPhone}
 	url := conf.GetConf().GetApi(phoneCall.Country, "manager_call_after_hours")
-	resp, err := SendRequest(payload, url, "POST")
+	settings := conf.GetConf().Agencies[phoneCall.Country]
+	resp, err := SendRequest(payload, url, "POST", settings["secret"], settings["companyId"])
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	} else {
@@ -158,7 +193,8 @@ func showCallingReview(p interface{}, w http.ResponseWriter, r *http.Request) {
 		"review_href":  phoneCall.ReviewHref,
 	}
 	url := conf.GetConf().GetApi(phoneCall.Country, "show_calling_review_popup_to_manager")
-	resp, err := SendRequest(payload, url, "POST")
+	settings := conf.GetConf().Agencies[phoneCall.Country]
+	resp, err := SendRequest(payload, url, "POST", settings["secret"], settings["companyId"])
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	} else {
@@ -173,7 +209,8 @@ func showCallingPopup(p interface{}, w http.ResponseWriter, r *http.Request) {
 		"calling_phone": phoneCall.CallingPhone,
 	}
 	url := conf.GetConf().GetApi(phoneCall.Country, "show_calling_popup_to_manager")
-	resp, err := SendRequest(payload, url, "POST")
+	settings := conf.GetConf().Agencies[phoneCall.Country]
+	resp, err := SendRequest(payload, url, "POST", settings["secret"], settings["companyId"])
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	} else {
@@ -185,7 +222,8 @@ func managerPhoneForCompany(p interface{}, w http.ResponseWriter, r *http.Reques
 	phoneCall := (*p.(*model.PhoneCall))
 	payload := map[string]string{"id": phoneCall.Id}
 	url := conf.GetConf().GetApi(phoneCall.Country, "manager_phone_for_company")
-	resp, err := SendRequest(payload, url, "GET")
+	settings := conf.GetConf().Agencies[phoneCall.Country]
+	resp, err := SendRequest(payload, url, "POST", settings["secret"], settings["companyId"])
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	} else {
@@ -197,7 +235,8 @@ func managerPhone(p interface{}, w http.ResponseWriter, r *http.Request) {
 	phoneCall := (*p.(*model.PhoneCall))
 	payload := map[string]string{"calling_phone": phoneCall.CallingPhone}
 	url := conf.GetConf().GetApi(phoneCall.Country, "manager_phone")
-	resp, err := SendRequest(payload, url, "GET")
+	settings := conf.GetConf().Agencies[phoneCall.Country]
+	resp, err := SendRequest(payload, url, "POST", settings["secret"], settings["companyId"])
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	} else {
@@ -216,7 +255,7 @@ func dbGet(p interface{}, w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func queueStatus(w http.ResponseWriter, r *http.Request) {
+func queueStatus(p interface{}, w http.ResponseWriter, r *http.Request) {
 	cb, cbc := getCallback()
 	m := gami.Message{"Action": "QueueStatus"}
 	if err := ami.GetAMI().SendAction(m, &cb); err != nil {
@@ -266,7 +305,7 @@ func placeSpy(p interface{}, w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func showChannels(w http.ResponseWriter, r *http.Request) {
+func showChannels(p interface{}, w http.ResponseWriter, r *http.Request) {
 	cb, cbc := getCallback()
 	if err := ami.GetAMI().Command("sip show inuse", &cb); err != nil {
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
@@ -275,7 +314,7 @@ func showChannels(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func showInuse(w http.ResponseWriter, r *http.Request) {
+func showInuse(p interface{}, w http.ResponseWriter, r *http.Request) {
 	cb, cbc := getCallback()
 	if err := ami.GetAMI().Command("sip show inuse", &cb); err != nil {
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})

@@ -1,11 +1,9 @@
 package ami
 
 import (
-	"encoding/json"
-	"log"
-	"net"
+	"strconv"
+	"time"
 
-	"github.com/boltdb/bolt"
 	"github.com/kr/pretty"
 	"github.com/warik/dialer/conf"
 	"github.com/warik/dialer/db"
@@ -18,39 +16,39 @@ var handlersMap = map[string]func(chan gami.Message, <-chan struct{}){
 	"Cdr": amiMessageHandler,
 }
 
-func startAmi(host, login, password string) (g *gami.Asterisk) {
-	c, err := net.Dial("tcp", host)
-	if err != nil {
-		log.Fatalln(err)
+func connectAndLogin(a *gami.Asterisk) {
+	for {
+		if err := a.Start(); err != nil {
+			pretty.Log("Trying to reconnect and relogin...")
+			time.Sleep(conf.AMI_RECONNECT_TIMEOUT)
+			continue
+		}
+		a.SendAction(gami.Message{"Action": "Events", "EventMask": "cdr"}, nil)
+		return
 	}
-	g = gami.NewAsterisk(&c, nil)
-	if err = g.Login(login, password); err != nil {
-		log.Fatalln(err)
+}
+
+func startAmi(host, login, password string) (a *gami.Asterisk) {
+	a = gami.NewAsterisk(host, login, password)
+	netErrHandler := func(err error) {
+		connectAndLogin(a)
 	}
+	a.SetNetErrHandler(&netErrHandler)
+	connectAndLogin(a)
 	return
 }
 
 func amiMessageHandler(mchan chan gami.Message, finishChan <-chan struct{}) {
+	i := 1
 	for {
 		select {
 		case <-finishChan:
 			pretty.Log("Finishing amiMessageHandler")
 			return
 		case m := <-mchan:
-			_ = db.GetDB().Update(func(tx *bolt.Tx) error {
-				b, err := tx.CreateBucketIfNotExists([]byte(conf.BOLT_CDR_BUCKET))
-				if err != nil {
-					pretty.Println(err)
-					mchan <- m
-				}
-
-				value, _ := json.Marshal(m)
-				if err := b.Put([]byte(m["UniqueID"]), value); err != nil {
-					pretty.Println(err)
-					mchan <- m
-				}
-				return nil
-			})
+			pretty.Log("Reading message -", m["UniqueID"], strconv.Itoa(i))
+			i++
+			db.PutChan <- m
 		}
 	}
 }
@@ -62,7 +60,6 @@ func GetAMI() *gami.Asterisk {
 func RegisterHandler(event string, finishChan <-chan struct{}) {
 	amiMsgChan := make(chan gami.Message)
 	dh := func(m gami.Message) {
-		pretty.Log("Reading message -", m["UniqueID"])
 		amiMsgChan <- m
 	}
 	GetAMI().RegisterHandler(event, &dh)

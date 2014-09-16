@@ -2,39 +2,18 @@ package db
 
 import (
 	"log"
-	"sync"
 
 	"github.com/boltdb/bolt"
 	"github.com/warik/dialer/conf"
+	"github.com/warik/gami"
 )
 
-type innerDB struct {
-	DB *bolt.DB
-	Rw *sync.RWMutex
-}
+var db *bolt.DB
+var PutChan chan gami.Message
+var DeleteChan chan gami.Message
 
-var db *innerDB
-
-func GetDB() *innerDB {
+func GetDB() *bolt.DB {
 	return db
-}
-
-func (idb *innerDB) Read(f func(tx *bolt.Tx) error) error {
-	(*idb).Rw.Lock()
-	defer (*idb).Rw.Unlock()
-	return (*idb).DB.View(f)
-}
-
-func (idb *innerDB) Update(f func(tx *bolt.Tx) error) error {
-	(*idb).Rw.Lock()
-	defer (*idb).Rw.Unlock()
-	return (*idb).DB.Update(f)
-}
-
-func (idb *innerDB) Close() {
-	(*idb).Rw.Lock()
-	defer (*idb).Rw.Unlock()
-	(*idb).DB.Close()
 }
 
 func initDB() (db *bolt.DB) {
@@ -46,5 +25,7 @@ func initDB() (db *bolt.DB) {
 }
 
 func init() {
-	db = &innerDB{DB: initDB(), Rw: &sync.RWMutex{}}
+	db = initDB()
+	PutChan = make(chan gami.Message)
+	DeleteChan = make(chan gami.Message)
 }

@@ -8,12 +8,14 @@ import (
 )
 
 const (
-	REQUEST_TIMEOUT   = 5
-	CDR_READ_TIMEOUT  = 30 * time.Second
-	REMOTE_ERROR_TEXT = "Error on remote server, status code - %v"
-	CDR_DB_FILE       = "cdr_log.db"
-	HANDLERS_COUNT    = 2
-	BOLT_CDR_BUCKET   = "CdrBucket"
+	REQUEST_TIMEOUT       = 5
+	CDR_READ_INTERVAL     = 30 * time.Second
+	REMOTE_ERROR_TEXT     = "Error on remote server, status code - %v"
+	CDR_DB_FILE           = "cdr_log.db"
+	HANDLERS_COUNT        = 2
+	BOLT_CDR_BUCKET       = "CdrBucket"
+	AMI_READ_DEADLINE     = 0
+	AMI_RECONNECT_TIMEOUT = 5 * time.Second
 )
 
 var PORTAL_MAP = map[string]string{
@@ -25,10 +27,10 @@ var PORTAL_MAP = map[string]string{
 }
 
 type Configuration struct {
-	AsteriskHost, AMILogin string
-	AMIPassword, Secret    string
-	CompanyId, Api         string
-	Countries              []string
+	AsteriskHost, AMILogin   string
+	AMIPassword, Secret, Api string
+	AllowedRemoteAddrs       []string
+	Agencies                 map[string]map[string]string
 }
 
 func (c Configuration) GetApi(country string, apiKey string) string {

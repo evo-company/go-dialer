@@ -21,10 +21,10 @@ import (
 	"github.com/warik/gami"
 )
 
-func signData(m map[string]string) (signedData string, err error) {
+func signData(m map[string]string, secret string) (signedData string, err error) {
 	h := hmac.New(func() hash.Hash {
 		return sha1.New()
-	}, []byte(conf.GetConf().Secret))
+	}, []byte(secret))
 
 	data, err := json.Marshal(m)
 	if err != nil {
@@ -34,26 +34,39 @@ func signData(m map[string]string) (signedData string, err error) {
 	return
 }
 
+func UnsignData(i interface{}, d model.SignedInputData) error {
+	h := hmac.New(func() hash.Hash {
+		return sha1.New()
+	}, []byte(conf.GetConf().Agencies[d.Country]["secret"]))
+	dataString, ok := signer.NewBase64Signer(h).Verify([]byte(d.Data))
+	if !ok {
+		return errors.New("Bad signature")
+	}
+
+	return json.Unmarshal(dataString, &i)
+}
+
 func Clean(finishChannels []chan struct{}) {
 	for _, channel := range finishChannels {
 		close(channel)
 	}
-	ami.GetAMI().Logoff()
 	db.GetDB().Close()
+	ami.GetAMI().Logoff()
 }
 
-func SendRequest(m map[string]string, url string, method string) (string, error) {
-	m["CompanyId"] = conf.GetConf().CompanyId
-	signedData, err := signData(m)
+func SendRequest(m map[string]string, url, method, secret, companyId string) (string, error) {
+	m["CompanyId"] = companyId
+	signedData, err := signData(m, secret)
 	if err != nil {
 		return "", err
 	}
 
+	data := model.SignedData{Data: signedData, CompanyId: companyId}
 	request := gorequest.New()
 	if method == "POST" {
-		request.Post(url).Send(model.SignedData{Data: signedData})
+		request.Post(url).Send(data)
 	} else if method == "GET" {
-		query, _ := json.Marshal(model.SignedData{Data: signedData})
+		query, _ := json.Marshal(data)
 		request.Get(url).Query(string(query))
 	}
 
@@ -79,7 +92,7 @@ func CdrReader(cdrChan chan<- gami.Message, finishChan <-chan struct{},
 			ticker.Stop()
 			return
 		case <-ticker.C:
-			_ = db.GetDB().Read(func(tx *bolt.Tx) error {
+			_ = db.GetDB().View(func(tx *bolt.Tx) error {
 				b := tx.Bucket([]byte(conf.BOLT_CDR_BUCKET))
 				if b == nil {
 					return nil
@@ -105,19 +118,49 @@ func CdrHandler(cdrChan <-chan gami.Message, finishChan <-chan struct{}, i int) 
 			return
 		case m := <-cdrChan:
 			pretty.Log("Processing message -", m["UniqueID"])
-			for _, country := range conf.GetConf().Countries {
-				url := conf.GetConf().GetApi(country, "save_phone_call")
-				if _, err := SendRequest(m, url, "POST"); err == nil {
-					_ = db.GetDB().Update(func(tx *bolt.Tx) error {
-						b := tx.Bucket([]byte(conf.BOLT_CDR_BUCKET))
-						if err := b.Delete([]byte(m["UniqueID"])); err != nil {
-							pretty.Log("Error while deleting message - ", m["UniqueID"])
-						}
-						return nil
-					})
+			for countryCode, settings := range conf.GetConf().Agencies {
+				url := conf.GetConf().GetApi(countryCode, "save_phone_call")
+				_, err := SendRequest(m, url, "POST", settings["secret"], settings["companyId"])
+				if err == nil {
+					db.DeleteChan <- m
 					break
 				}
 			}
+		}
+	}
+}
+
+func DbHandler(finishChan <-chan struct{}) {
+	for {
+		select {
+		case <-finishChan:
+			pretty.Log("Finishing dbHandler")
+			return
+		case m := <-db.DeleteChan:
+			_ = db.GetDB().Update(func(tx *bolt.Tx) error {
+				b := tx.Bucket([]byte(conf.BOLT_CDR_BUCKET))
+				if err := b.Delete([]byte(m["UniqueID"])); err != nil {
+					pretty.Log("Error while deleting message - ", m["UniqueID"])
+				}
+				return nil
+			})
+		case m := <-db.PutChan:
+			_ = db.GetDB().Update(func(tx *bolt.Tx) error {
+				b, err := tx.CreateBucketIfNotExists([]byte(conf.BOLT_CDR_BUCKET))
+				if err != nil {
+					// Couldnt save - try later
+					pretty.Println(err)
+					db.PutChan <- m
+				}
+
+				value, _ := json.Marshal(m)
+				if err := b.Put([]byte(m["UniqueID"]), value); err != nil {
+					// Couldnt delete - try later
+					pretty.Println(err)
+					db.PutChan <- m
+				}
+				return nil
+			})
 		}
 	}
 }

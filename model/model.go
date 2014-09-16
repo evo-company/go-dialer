@@ -50,12 +50,22 @@ type PhoneCall struct {
 	ReviewHref   string `param:"review_href"`
 }
 
-type SignedData struct {
-	Data string
+type SignedInputData struct {
+	Data    string `param:"data"`
+	Country string `param:"country"`
 }
 
 type Cdr struct {
 	Id string `param:"id"`
+}
+
+type SignedData struct {
+	Data      string
+	CompanyId string
+}
+
+type DummyStruct struct {
+	Dummy string
 }
 
 func GetStructFromParams(r *http.Request, s interface{}) (err error) {
