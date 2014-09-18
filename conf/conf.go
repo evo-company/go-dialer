@@ -2,9 +2,10 @@ package conf
 
 import (
 	"encoding/json"
-	"log"
 	"os"
 	"time"
+
+	"github.com/warik/dialer/model"
 )
 
 const (
@@ -12,7 +13,7 @@ const (
 	CDR_READ_INTERVAL     = 30 * time.Second
 	REMOTE_ERROR_TEXT     = "Error on remote server, status code - %v"
 	CDR_DB_FILE           = "cdr_log.db"
-	HANDLERS_COUNT        = 2
+	MAX_CDR_NUMBER        = 50
 	BOLT_CDR_BUCKET       = "CdrBucket"
 	AMI_READ_DEADLINE     = 0
 	AMI_RECONNECT_TIMEOUT = 5 * time.Second
@@ -30,7 +31,7 @@ type Configuration struct {
 	AsteriskHost, AMILogin   string
 	AMIPassword, Secret, Api string
 	AllowedRemoteAddrs       []string
-	Agencies                 map[string]map[string]string
+	Agencies                 map[string]model.CountrySettings
 }
 
 func (c Configuration) GetApi(country string, apiKey string) string {
@@ -40,14 +41,14 @@ func (c Configuration) GetApi(country string, apiKey string) string {
 func initConf(confFile string) Configuration {
 	file, err := os.Open(confFile)
 	if err != nil {
-		log.Fatalln(err)
+		panic(err)
 	}
 	defer file.Close()
 
 	conf := Configuration{}
 	err = json.NewDecoder(file).Decode(&conf)
 	if err != nil {
-		log.Fatalln(err)
+		panic(err)
 	}
 	return conf
 }

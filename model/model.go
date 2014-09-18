@@ -18,6 +18,11 @@ func (r Response) String() string {
 	return string(b)
 }
 
+type CountrySettings struct {
+	CompanyId string `json:"companyId"`
+	Secret    string `json:"secret"`
+}
+
 type Call struct {
 	Inline string `param:"inline"`
 	Exten  string `param:"exten"`

@@ -8,18 +8,27 @@ import (
 	"fmt"
 	"hash"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/boltdb/bolt"
 	"github.com/kr/pretty"
 	"github.com/parnurzeal/gorequest"
 	"github.com/vmihailenco/signer"
+	"github.com/warik/gami"
+
 	"github.com/warik/dialer/ami"
 	"github.com/warik/dialer/conf"
 	"github.com/warik/dialer/db"
 	"github.com/warik/dialer/model"
-	"github.com/warik/gami"
 )
+
+func min(a, b int) int {
+	if a <= b {
+		return a
+	}
+	return b
+}
 
 func signData(m map[string]string, secret string) (signedData string, err error) {
 	h := hmac.New(func() hash.Hash {
@@ -37,7 +46,7 @@ func signData(m map[string]string, secret string) (signedData string, err error)
 func UnsignData(i interface{}, d model.SignedInputData) error {
 	h := hmac.New(func() hash.Hash {
 		return sha1.New()
-	}, []byte(conf.GetConf().Agencies[d.Country]["secret"]))
+	}, []byte(conf.GetConf().Agencies[d.Country].Secret))
 	dataString, ok := signer.NewBase64Signer(h).Verify([]byte(d.Data))
 	if !ok {
 		return errors.New("Bad signature")
@@ -46,12 +55,14 @@ func UnsignData(i interface{}, d model.SignedInputData) error {
 	return json.Unmarshal(dataString, &i)
 }
 
-func Clean(finishChannels []chan struct{}) {
+func Clean(finishChannels []chan struct{}, wg *sync.WaitGroup) {
 	for _, channel := range finishChannels {
 		close(channel)
 	}
+	wg.Wait()
 	db.GetDB().Close()
 	ami.GetAMI().Logoff()
+	// panic("Manual panic for checking goroutines")
 }
 
 func SendRequest(m map[string]string, url, method, secret, companyId string) (string, error) {
@@ -83,44 +94,51 @@ func SendRequest(m map[string]string, url, method, secret, companyId string) (st
 	return respBody, nil
 }
 
-func CdrReader(cdrChan chan<- gami.Message, finishChan <-chan struct{},
+func CdrReader(wg *sync.WaitGroup, cdrChan chan<- gami.Message, finishChan <-chan struct{},
 	ticker *time.Ticker) {
+	wg.Add(1)
 	for {
 		select {
 		case <-finishChan:
 			pretty.Log("Finishing cdrReader")
 			ticker.Stop()
+			wg.Done()
 			return
 		case <-ticker.C:
 			_ = db.GetDB().View(func(tx *bolt.Tx) error {
 				b := tx.Bucket([]byte(conf.BOLT_CDR_BUCKET))
-				if b == nil {
-					return nil
-				}
-				pretty.Log("Reading data from db. Cdr count - ", strconv.Itoa(b.Stats().KeyN))
+				totalCdrNum := b.Stats().KeyN
+				readedCdrNum := 0
+				pretty.Log("Reading data from db. Cdr count - ", strconv.Itoa(totalCdrNum))
+				pretty.Log("Processing - ", strconv.Itoa(min(totalCdrNum, conf.MAX_CDR_NUMBER)))
 				c := b.Cursor()
-				for k, v := c.First(); k != nil; k, v = c.Next() {
+				for k, v := c.First(); k != nil && readedCdrNum <= conf.MAX_CDR_NUMBER; k, v = c.Next() {
 					m := gami.Message{}
 					_ = json.Unmarshal(v, &m)
 					cdrChan <- m
+					readedCdrNum++
 				}
+
 				return nil
 			})
 		}
 	}
 }
 
-func CdrHandler(cdrChan <-chan gami.Message, finishChan <-chan struct{}, i int) {
+func CdrHandler(wg *sync.WaitGroup, cdrChan <-chan gami.Message, finishChan <-chan struct{},
+	i int) {
+	wg.Add(1)
 	for {
 		select {
 		case <-finishChan:
 			pretty.Log("Finishing cdrHandler", strconv.Itoa(i))
+			wg.Done()
 			return
 		case m := <-cdrChan:
 			pretty.Log("Processing message -", m["UniqueID"])
 			for countryCode, settings := range conf.GetConf().Agencies {
 				url := conf.GetConf().GetApi(countryCode, "save_phone_call")
-				_, err := SendRequest(m, url, "POST", settings["secret"], settings["companyId"])
+				_, err := SendRequest(m, url, "POST", settings.Secret, settings.CompanyId)
 				if err == nil {
 					db.DeleteChan <- m
 					break
@@ -130,11 +148,13 @@ func CdrHandler(cdrChan <-chan gami.Message, finishChan <-chan struct{}, i int) 
 	}
 }
 
-func DbHandler(finishChan <-chan struct{}) {
+func DbHandler(wg *sync.WaitGroup, finishChan <-chan struct{}) {
+	wg.Add(1)
 	for {
 		select {
 		case <-finishChan:
 			pretty.Log("Finishing dbHandler")
+			wg.Done()
 			return
 		case m := <-db.DeleteChan:
 			_ = db.GetDB().Update(func(tx *bolt.Tx) error {
@@ -146,18 +166,10 @@ func DbHandler(finishChan <-chan struct{}) {
 			})
 		case m := <-db.PutChan:
 			_ = db.GetDB().Update(func(tx *bolt.Tx) error {
-				b, err := tx.CreateBucketIfNotExists([]byte(conf.BOLT_CDR_BUCKET))
-				if err != nil {
-					// Couldnt save - try later
-					pretty.Println(err)
-					db.PutChan <- m
-				}
-
+				b := tx.Bucket([]byte(conf.BOLT_CDR_BUCKET))
 				value, _ := json.Marshal(m)
 				if err := b.Put([]byte(m["UniqueID"]), value); err != nil {
-					// Couldnt delete - try later
-					pretty.Println(err)
-					db.PutChan <- m
+					panic(err)
 				}
 				return nil
 			})
