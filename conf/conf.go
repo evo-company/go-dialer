@@ -19,7 +19,6 @@ const (
 	CDR_DB_FILE           = "cdr_log.db"
 	MAX_CDR_NUMBER        = 50
 	BOLT_CDR_BUCKET       = "CdrBucket"
-	AMI_READ_DEADLINE     = 0
 	AMI_RECONNECT_TIMEOUT = 5 * time.Second
 )
 
