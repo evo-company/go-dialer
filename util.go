@@ -109,8 +109,14 @@ func CdrReader(wg *sync.WaitGroup, cdrChan chan<- gami.Message, finishChan <-cha
 				b := tx.Bucket([]byte(conf.BOLT_CDR_BUCKET))
 				totalCdrNum := b.Stats().KeyN
 				readedCdrNum := 0
-				pretty.Log("Reading data from db. Cdr count - ", strconv.Itoa(totalCdrNum))
-				pretty.Log("Processing - ", strconv.Itoa(min(totalCdrNum, conf.MAX_CDR_NUMBER)))
+
+				if totalCdrNum >= conf.MAX_CDR_NUMBER {
+					conf.Alert(fmt.Sprintf("Too much cdrs - %s", strconv.Itoa(totalCdrNum)))
+				}
+
+				pretty.Log(fmt.Sprintf("Reading data. Total-%s;Processing-%s ",
+					strconv.Itoa(totalCdrNum),
+					strconv.Itoa(min(totalCdrNum, conf.MAX_CDR_NUMBER))))
 				c := b.Cursor()
 				for k, v := c.First(); k != nil && readedCdrNum <= conf.MAX_CDR_NUMBER; k, v = c.Next() {
 					m := gami.Message{}
@@ -118,7 +124,6 @@ func CdrReader(wg *sync.WaitGroup, cdrChan chan<- gami.Message, finishChan <-cha
 					cdrChan <- m
 					readedCdrNum++
 				}
-
 				return nil
 			})
 		}
@@ -169,6 +174,7 @@ func DbHandler(wg *sync.WaitGroup, finishChan <-chan struct{}) {
 				b := tx.Bucket([]byte(conf.BOLT_CDR_BUCKET))
 				value, _ := json.Marshal(m)
 				if err := b.Put([]byte(m["UniqueID"]), value); err != nil {
+					conf.Alert("Cannot add cdr to db")
 					panic(err)
 				}
 				return nil

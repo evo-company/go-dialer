@@ -2,8 +2,12 @@ package conf
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"os"
 	"time"
+
+	"github.com/parnurzeal/gorequest"
 
 	"github.com/warik/dialer/model"
 )
@@ -19,6 +23,8 @@ const (
 	AMI_RECONNECT_TIMEOUT = 5 * time.Second
 )
 
+var conf Configuration
+
 var PORTAL_MAP = map[string]string{
 	"ua": "http://my.example.com:5000/",
 	// "ua": "https://my.prom.ua/",
@@ -28,10 +34,11 @@ var PORTAL_MAP = map[string]string{
 }
 
 type Configuration struct {
-	AsteriskHost, AMILogin   string
-	AMIPassword, Secret, Api string
-	AllowedRemoteAddrs       []string
-	Agencies                 map[string]model.CountrySettings
+	AMILogin, Secret   string
+	AMIPassword, Name  string
+	AsteriskHost, Api  string
+	AllowedRemoteAddrs []string
+	Agencies           map[string]model.CountrySettings
 }
 
 func (c Configuration) GetApi(country string, apiKey string) string {
@@ -53,10 +60,21 @@ func initConf(confFile string) Configuration {
 	return conf
 }
 
-var conf Configuration
-
 func GetConf() *Configuration {
 	return &conf
+}
+
+func Alert(msg string) {
+	url := "http://sms.skysms.net/api/submit_sm"
+	msg = fmt.Sprintf("%s: %s", conf.Name, msg)
+	params := fmt.Sprintf("login=%s&passwd=%s&destaddr=%s&msgchrset=cyr&msgtext=%s",
+		"uaprominfo", "RVC18bfOLL", "+380637385529", msg)
+	_, _, errs := gorequest.New().Get(url).Query(params).End()
+	if len(errs) != 0 {
+		for _, err := range errs {
+			log.Println(err)
+		}
+	}
 }
 
 func init() {
