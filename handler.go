@@ -17,30 +17,6 @@ import (
 	"github.com/warik/dialer/model"
 )
 
-func getCallback() (cb func(gami.Message), cbc chan gami.Message) {
-	cbc = make(chan gami.Message)
-	cb = func(m gami.Message) {
-		pretty.Log("Handling response...")
-		cbc <- m
-	}
-	return
-}
-
-func writeResponse(
-	w http.ResponseWriter,
-	resp gami.Message,
-	statusFromResponse bool,
-	dataKey string,
-) {
-	var status string
-	if statusFromResponse {
-		status = strings.ToLower(resp["Response"])
-	} else {
-		status = "success"
-	}
-	fmt.Fprint(w, model.Response{"status": status, "response": resp[dataKey]})
-}
-
 func DBStats(w http.ResponseWriter, r *http.Request) {
 	data, _ := json.Marshal(db.GetStats())
 	fmt.Fprint(w, string(data))
@@ -156,39 +132,39 @@ func ManagerPhone(p interface{}, w http.ResponseWriter, r *http.Request) {
 
 func DBGet(p interface{}, w http.ResponseWriter, r *http.Request) {
 	dbGetter := (*p.(*model.DbGetter))
-	cb, cbc := getCallback()
+	cb, cbc := GetCallback()
 	command := fmt.Sprintf("database get %s %s", dbGetter.Family, dbGetter.Key)
 	if err := ami.GetAMI().Command(command, &cb); err != nil {
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 	} else {
-		writeResponse(w, <-cbc, false, "CmdData")
+		WriteResponse(w, <-cbc, false, "Value")
 	}
 }
 
 func QueueStatus(p interface{}, w http.ResponseWriter, r *http.Request) {
-	cb, cbc := getCallback()
+	cb, cbc := GetCallback()
 	m := gami.Message{"Action": "QueueStatus"}
 	if err := ami.GetAMI().SendAction(m, &cb); err != nil {
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 	} else {
-		writeResponse(w, <-cbc, true, "Message")
+		WriteResponse(w, <-cbc, true, "Message")
 	}
 }
 
 func QueueRemove(p interface{}, w http.ResponseWriter, r *http.Request) {
 	queue := (*p.(*model.Queue))
-	cb, cbc := getCallback()
+	cb, cbc := GetCallback()
 	m := gami.Message{"Action": "QueueRemove", "Queue": queue.Queue, "Interface": queue.Interface}
 	if err := ami.GetAMI().SendAction(m, &cb); err != nil {
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 	} else {
-		writeResponse(w, <-cbc, true, "Message")
+		WriteResponse(w, <-cbc, true, "Message")
 	}
 }
 
 func QueueAdd(p interface{}, w http.ResponseWriter, r *http.Request) {
 	queue := (*p.(*model.Queue))
-	cb, cbc := getCallback()
+	cb, cbc := GetCallback()
 	m := gami.Message{
 		"Action":         "QueueAdd",
 		"Queue":          queue.Queue,
@@ -198,7 +174,7 @@ func QueueAdd(p interface{}, w http.ResponseWriter, r *http.Request) {
 	if err := ami.GetAMI().SendAction(m, &cb); err != nil {
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 	} else {
-		writeResponse(w, <-cbc, true, "Message")
+		WriteResponse(w, <-cbc, true, "Message")
 	}
 }
 
@@ -207,52 +183,53 @@ func PlaceSpy(p interface{}, w http.ResponseWriter, r *http.Request) {
 	o := gami.NewOriginateApp(call.GetChannel(), "ChanSpy", fmt.Sprintf("SIP/%v", call.Exten))
 	o.Async = true
 
-	cb, cbc := getCallback()
+	cb, cbc := GetCallback()
 	if err := ami.GetAMI().Originate(o, nil, &cb); err != nil {
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 	} else {
-		writeResponse(w, <-cbc, true, "Message")
+		WriteResponse(w, <-cbc, true, "Message")
 	}
 }
 
 func ShowChannels(p interface{}, w http.ResponseWriter, r *http.Request) {
-	cb, cbc := getCallback()
+	cb, cbc := GetCallback()
 	if err := ami.GetAMI().Command("sip show inuse", &cb); err != nil {
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 	} else {
-		writeResponse(w, <-cbc, false, "CmdData")
+		WriteResponse(w, <-cbc, false, "CmdData")
 	}
 }
 
 func ShowInuse(p interface{}, w http.ResponseWriter, r *http.Request) {
-	cb, cbc := getCallback()
+	cb, cbc := GetCallback()
 	if err := ami.GetAMI().Command("sip show inuse", &cb); err != nil {
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 	} else {
-		writeResponse(w, <-cbc, false, "CmdData")
+		WriteResponse(w, <-cbc, false, "CmdData")
 	}
 }
 
 func PlaceCall(p interface{}, w http.ResponseWriter, r *http.Request) {
 	call := (*p.(*model.Call))
-	o := gami.NewOriginate(call.GetChannel(), "test", call.Exten, "1")
+
+	o := gami.NewOriginate(call.GetChannel(), "", strings.TrimPrefix(call.Exten, "+"), "1")
 	o.CallerID = call.GetCallerID()
 	o.Async = true
 
-	cb, cbc := getCallback()
+	cb, cbc := GetCallback()
 	if err := ami.GetAMI().Originate(o, nil, &cb); err != nil {
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 	} else {
-		writeResponse(w, <-cbc, true, "Message")
+		WriteResponse(w, <-cbc, true, "Message")
 	}
 }
 
 func PingAsterisk(w http.ResponseWriter, r *http.Request) {
-	cb, cbc := getCallback()
+	cb, cbc := GetCallback()
 	if err := ami.GetAMI().SendAction(gami.Message{"Action": "Ping"}, &cb); err != nil {
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 	} else {
-		writeResponse(w, <-cbc, true, "Ping")
+		WriteResponse(w, <-cbc, true, "Ping")
 	}
 }
 

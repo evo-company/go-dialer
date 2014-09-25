@@ -1,6 +1,9 @@
 package db
 
 import (
+	"os"
+	"path/filepath"
+
 	"github.com/boltdb/bolt"
 	"github.com/warik/gami"
 
@@ -24,7 +27,8 @@ func GetStats() bolt.Stats {
 }
 
 func initDB() (db *bolt.DB) {
-	db, err := bolt.Open(conf.CDR_DB_FILE, 0600, nil)
+	path, _ := filepath.Abs(filepath.Dir(os.Args[0]))
+	db, err := bolt.Open(filepath.Join(path, conf.CDR_DB_FILE), 0600, nil)
 	if err != nil {
 		panic(err)
 	}

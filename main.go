@@ -13,33 +13,47 @@ import (
 
 	"github.com/warik/dialer/ami"
 	"github.com/warik/dialer/conf"
-	"github.com/warik/dialer/db"
 	"github.com/warik/dialer/model"
 )
 
 func main() {
+	// Lets get inner numbers first of all
+	getInnerNumbers()
+
 	wg := sync.WaitGroup{}
 
-	dh := func(m gami.Message) {
-		pretty.Log("Reading message -", m["UniqueID"])
-		db.PutChan <- m
-	}
-	ami.GetAMI().RegisterHandler("Cdr", &dh)
+	h := CdrEventHandler
+	ami.GetAMI().RegisterHandler("Cdr", &h)
 
+	queues := []string{}
+	queueh := func(m gami.Message) {
+		if strings.HasPrefix(m["Name"], "Local") {
+			queues = append(queues, m["Queue"])
+		}
+		// pretty.Log(len(queues))
+	}
+	ami.GetAMI().RegisterHandler("QueueMember", &queueh)
+	// QueueStatusComplete
 	cdrChan := make(chan gami.Message)
 	finishChannels := []chan struct{}{make(chan struct{})}
-	ticker := time.NewTicker(conf.CDR_READ_INTERVAL)
-	go CdrReader(&wg, cdrChan, finishChannels[len(finishChannels)-1], ticker)
+	go CdrReader(&wg, cdrChan, finishChannels[len(finishChannels)-1],
+		time.NewTicker(conf.CDR_READ_INTERVAL))
 
 	// Handlers are sending requests to corresponding portals,
 	// so their number must be same as number of countries which agency working in
-	for i := 0; i < len(conf.GetConf().Agencies); i++ {
+	for i := 0; i < conf.HANDLERS_NUMBER; i++ {
 		finishChannels = append(finishChannels, make(chan struct{}))
-		go CdrHandler(&wg, cdrChan, finishChannels[len(finishChannels)-1], i)
+		go CdrSaver(&wg, cdrChan, finishChannels[len(finishChannels)-1], i)
 	}
 
 	finishChannels = append(finishChannels, make(chan struct{}))
 	go DbHandler(&wg, finishChannels[len(finishChannels)-1])
+
+	if conf.GetConf().Name == "prom" {
+		finishChannels = append(finishChannels, make(chan struct{}))
+		go QueueManager(&wg, finishChannels[len(finishChannels)-1],
+			time.NewTicker(conf.QUEUE_RENEW_INTERVAL))
+	}
 
 	initRoutes()
 	graceful.PostHook(func() {
@@ -60,8 +74,8 @@ func initRoutes() {
 	//API for prom
 	goji.Get("/show_inuse", withSignedParams(new(model.DummyStruct), ShowInuse))
 	goji.Get("/show_channels", withSignedParams(new(model.DummyStruct), ShowChannels))
-	goji.Get("/queue_status", withSignedParams(new(model.DummyStruct), QueueStatus))
-	goji.Get("/db_get", withSignedParams(new(model.DbGetter), DBGet))
+	// goji.Get("/queue_status", withSignedParams(new(model.DummyStruct), QueueStatus))
+	// goji.Get("/db_get", withSignedParams(new(model.DbGetter), DBGet))
 	goji.Post("/call", withSignedParams(new(model.Call), PlaceCall))
 	goji.Post("/spy", withSignedParams(new(model.Call), PlaceSpy))
 	goji.Post("/queue_add", withSignedParams(new(model.Queue), QueueAdd))
@@ -79,7 +93,7 @@ func initRoutes() {
 		withStructParams(new(model.PhoneCall), ManagerCallAfterHours))
 
 	goji.Use(JSONReponse)
-	goji.Use(AllowedRemoteAddress)
+	// goji.Use(AllowedRemoteAddress)
 }
 
 func JSONReponse(h http.Handler) http.Handler {
@@ -98,6 +112,7 @@ func AllowedRemoteAddress(h http.Handler) http.Handler {
 				return
 			}
 		}
+		pretty.Log("Request from not allowed IP", r.RemoteAddr)
 		http.Error(w, "Not allowed remote address", http.StatusUnauthorized)
 	}
 	return http.HandlerFunc(fn)
@@ -112,9 +127,11 @@ func withSignedParams(i interface{}, h func(interface{}, http.ResponseWriter,
 			return
 		}
 		if err := UnsignData(i, (*signedData)); err != nil {
+			pretty.Log(err.Error())
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
 		}
+		pretty.Log(i)
 		h(i, w, r)
 	}
 }
@@ -126,6 +143,7 @@ func withStructParams(i interface{}, h func(interface{}, http.ResponseWriter,
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		pretty.Log(i)
 		h(i, w, r)
 	}
 }

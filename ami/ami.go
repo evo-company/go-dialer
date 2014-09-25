@@ -13,10 +13,20 @@ var ami *gami.Asterisk
 
 func connectAndLogin(a *gami.Asterisk) {
 	for {
+		wasError := false
+		messageAlreadySent := false
 		if err := a.Start(); err != nil {
+			wasError = true
 			pretty.Log("Trying to reconnect and relogin...")
+			if !messageAlreadySent {
+				conf.Alert("Lost connection with asterisk")
+				messageAlreadySent = true
+			}
 			time.Sleep(conf.AMI_RECONNECT_TIMEOUT)
 			continue
+		}
+		if wasError {
+			conf.Alert("Connection with asterisk restored")
 		}
 		a.SendAction(gami.Message{"Action": "Events", "EventMask": "cdr"}, nil)
 		return

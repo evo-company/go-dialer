@@ -7,11 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"hash"
-	"strconv"
+	"net/http"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/boltdb/bolt"
 	"github.com/kr/pretty"
 	"github.com/parnurzeal/gorequest"
 	"github.com/vmihailenco/signer"
@@ -23,6 +24,16 @@ import (
 	"github.com/warik/dialer/model"
 )
 
+const (
+	INCOMING_CALL = iota
+	OUTGOING_CALL
+	INNER_CALL
+	UNKNOWN_CALL
+	INCOMING_CALL_HIDDEN
+)
+
+var InnerPhonesNumber map[string]map[string]string
+
 func min(a, b int) int {
 	if a <= b {
 		return a
@@ -30,10 +41,16 @@ func min(a, b int) int {
 	return b
 }
 
+func getKey(secret string) []byte {
+	sh := sha1.New()
+	sh.Write([]byte("saltysigner" + secret))
+	return sh.Sum(nil)
+}
+
 func signData(m map[string]string, secret string) (signedData string, err error) {
 	h := hmac.New(func() hash.Hash {
 		return sha1.New()
-	}, []byte(secret))
+	}, getKey(secret))
 
 	data, err := json.Marshal(m)
 	if err != nil {
@@ -43,13 +60,96 @@ func signData(m map[string]string, secret string) (signedData string, err error)
 	return
 }
 
+func getInnerNumbers() {
+	temp := map[string]map[string]string{}
+	for countryCode, settings := range conf.GetConf().Agencies {
+		url := conf.GetConf().GetApi(countryCode, "get_employees_inner_phone")
+		numbers, err := SendRequest(map[string]string{}, url, "GET", settings.Secret,
+			settings.CompanyId)
+		if err != nil {
+			pretty.Log(err)
+			continue
+		}
+		temp[countryCode] = map[string]string{}
+		for _, number := range strings.Split(numbers, ",") {
+			temp[countryCode][number] = ""
+		}
+	}
+	InnerPhonesNumber = temp
+}
+
+func GetPhoneDetails(m gami.Message) (string, string, int) {
+	re, _ := regexp.Compile("^\\w+/(\\d{2,4}|\\d{4}\\w{2})\\D*-.+$")
+	in := re.FindStringSubmatch(m["Channel"])
+	out := re.FindStringSubmatch(m["DestinationChannel"])
+	if in != nil && out != nil {
+		// If both phones are inner and same - its incoming call through queue
+		// If not - inner call
+		if in[1] == out[1] {
+			// If there is no any form of source - its hidden call
+			if m["Source"] == "" && m["CallerID"] == "" {
+				return out[1], "xxxx", INCOMING_CALL_HIDDEN
+			} else {
+				return out[1], m["Source"], INCOMING_CALL
+			}
+		} else {
+			return "", "", INNER_CALL
+		}
+	}
+	if in != nil {
+		return in[1], m["Destination"], OUTGOING_CALL
+	}
+	if out != nil {
+		if m["Source"] == "" && m["CallerID"] == "" {
+			return out[1], "xxxx", INCOMING_CALL_HIDDEN
+		} else {
+			return out[1], m["Source"], INCOMING_CALL
+		}
+	} else {
+		// High chances that this is just dropped phone, so just ignore
+		return "", "", -1
+	}
+}
+
+func GetCallback() (cb func(gami.Message), cbc chan gami.Message) {
+	cbc = make(chan gami.Message)
+	cb = func(m gami.Message) {
+		// pretty.Log("Handling response...")
+		cbc <- m
+	}
+	return
+}
+
+func WriteResponse(
+	w http.ResponseWriter,
+	resp gami.Message,
+	statusFromResponse bool,
+	dataKey string,
+) {
+	var status string
+	pretty.Log(resp)
+	if statusFromResponse {
+		status = strings.ToLower(resp["Response"])
+	}
+
+	response := ""
+	if val, ok := resp[dataKey]; ok {
+		response = val
+		status = "success"
+	} else {
+		status = "error"
+	}
+	fmt.Fprint(w, model.Response{"status": status, "response": response})
+}
+
 func UnsignData(i interface{}, d model.SignedInputData) error {
 	h := hmac.New(func() hash.Hash {
 		return sha1.New()
-	}, []byte(conf.GetConf().Agencies[d.Country].Secret))
+	}, []byte(getKey(conf.GetConf().Agencies[d.Country].Secret)))
 	dataString, ok := signer.NewBase64Signer(h).Verify([]byte(d.Data))
+
 	if !ok {
-		return errors.New("Bad signature")
+		return errors.New(fmt.Sprintf("Bad signature - %s", strings.Split(d.Data, ".")[1]))
 	}
 
 	return json.Unmarshal(dataString, &i)
@@ -92,93 +192,4 @@ func SendRequest(m map[string]string, url, method, secret, companyId string) (st
 	}
 
 	return respBody, nil
-}
-
-func CdrReader(wg *sync.WaitGroup, cdrChan chan<- gami.Message, finishChan <-chan struct{},
-	ticker *time.Ticker) {
-	wg.Add(1)
-	for {
-		select {
-		case <-finishChan:
-			pretty.Log("Finishing cdrReader")
-			ticker.Stop()
-			wg.Done()
-			return
-		case <-ticker.C:
-			_ = db.GetDB().View(func(tx *bolt.Tx) error {
-				b := tx.Bucket([]byte(conf.BOLT_CDR_BUCKET))
-				totalCdrNum := b.Stats().KeyN
-				readedCdrNum := 0
-
-				if totalCdrNum >= conf.MAX_CDR_NUMBER {
-					conf.Alert(fmt.Sprintf("Too much cdrs - %s", strconv.Itoa(totalCdrNum)))
-				}
-
-				pretty.Log(fmt.Sprintf("Reading data. Total-%s;Processing-%s ",
-					strconv.Itoa(totalCdrNum),
-					strconv.Itoa(min(totalCdrNum, conf.MAX_CDR_NUMBER))))
-				c := b.Cursor()
-				for k, v := c.First(); k != nil && readedCdrNum <= conf.MAX_CDR_NUMBER; k, v = c.Next() {
-					m := gami.Message{}
-					_ = json.Unmarshal(v, &m)
-					cdrChan <- m
-					readedCdrNum++
-				}
-				return nil
-			})
-		}
-	}
-}
-
-func CdrHandler(wg *sync.WaitGroup, cdrChan <-chan gami.Message, finishChan <-chan struct{},
-	i int) {
-	wg.Add(1)
-	for {
-		select {
-		case <-finishChan:
-			pretty.Log("Finishing cdrHandler", strconv.Itoa(i))
-			wg.Done()
-			return
-		case m := <-cdrChan:
-			pretty.Log("Processing message -", m["UniqueID"])
-			for countryCode, settings := range conf.GetConf().Agencies {
-				url := conf.GetConf().GetApi(countryCode, "save_phone_call")
-				_, err := SendRequest(m, url, "POST", settings.Secret, settings.CompanyId)
-				if err == nil {
-					db.DeleteChan <- m
-					break
-				}
-			}
-		}
-	}
-}
-
-func DbHandler(wg *sync.WaitGroup, finishChan <-chan struct{}) {
-	wg.Add(1)
-	for {
-		select {
-		case <-finishChan:
-			pretty.Log("Finishing dbHandler")
-			wg.Done()
-			return
-		case m := <-db.DeleteChan:
-			_ = db.GetDB().Update(func(tx *bolt.Tx) error {
-				b := tx.Bucket([]byte(conf.BOLT_CDR_BUCKET))
-				if err := b.Delete([]byte(m["UniqueID"])); err != nil {
-					pretty.Log("Error while deleting message - ", m["UniqueID"])
-				}
-				return nil
-			})
-		case m := <-db.PutChan:
-			_ = db.GetDB().Update(func(tx *bolt.Tx) error {
-				b := tx.Bucket([]byte(conf.BOLT_CDR_BUCKET))
-				value, _ := json.Marshal(m)
-				if err := b.Put([]byte(m["UniqueID"]), value); err != nil {
-					conf.Alert("Cannot add cdr to db")
-					panic(err)
-				}
-				return nil
-			})
-		}
-	}
 }
