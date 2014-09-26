@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/boltdb/bolt"
-	"github.com/kr/pretty"
+	"github.com/golang/glog"
 	"github.com/warik/gami"
 
 	"github.com/warik/dialer/ami"
@@ -22,7 +22,7 @@ func CdrReader(wg *sync.WaitGroup, cdrChan chan<- gami.Message, finishChan <-cha
 	for {
 		select {
 		case <-finishChan:
-			pretty.Log("Finishing CdrReader")
+			glog.Warningln("Finishing CdrReader")
 			ticker.Stop()
 			wg.Done()
 			return
@@ -36,7 +36,7 @@ func CdrReader(wg *sync.WaitGroup, cdrChan chan<- gami.Message, finishChan <-cha
 					conf.Alert(fmt.Sprintf("Too much cdrs - %s", strconv.Itoa(totalCdrNum)))
 				}
 
-				pretty.Log(fmt.Sprintf("Reading data. Total-%s;Processing-%s ",
+				glog.Infoln(fmt.Sprintf("Reading data. Total-%s;Processing-%s ",
 					strconv.Itoa(totalCdrNum),
 					strconv.Itoa(min(totalCdrNum, conf.MAX_CDR_NUMBER))))
 				c := b.Cursor()
@@ -58,11 +58,11 @@ func CdrSaver(wg *sync.WaitGroup, cdrChan <-chan gami.Message, finishChan <-chan
 	for {
 		select {
 		case <-finishChan:
-			pretty.Log("Finishing CdrSaver", strconv.Itoa(i))
+			glog.Warningln("Finishing CdrSaver", strconv.Itoa(i))
 			wg.Done()
 			return
 		case m := <-cdrChan:
-			pretty.Log("Processing message -", m["UniqueID"])
+			glog.Infoln("Processing message -", m["UniqueID"])
 
 			settings := conf.GetConf().Agencies[m["CountryCode"]]
 			url := conf.GetConf().GetApi(m["CountryCode"], "save_phone_call")
@@ -80,14 +80,14 @@ func DbHandler(wg *sync.WaitGroup, finishChan <-chan struct{}) {
 	for {
 		select {
 		case <-finishChan:
-			pretty.Log("Finishing DbHandler")
+			glog.Warningln("Finishing DbHandler")
 			wg.Done()
 			return
 		case m := <-db.DeleteChan:
 			_ = db.GetDB().Update(func(tx *bolt.Tx) error {
 				b := tx.Bucket([]byte(conf.BOLT_CDR_BUCKET))
 				if err := b.Delete([]byte(m["UniqueID"])); err != nil {
-					pretty.Log("Error while deleting message - ", m["UniqueID"])
+					glog.Infoln("Error while deleting message - ", m["UniqueID"])
 				}
 				return nil
 			})
@@ -110,7 +110,7 @@ func QueueManager(wg *sync.WaitGroup, finishChan <-chan struct{}, ticker *time.T
 	for {
 		select {
 		case <-finishChan:
-			pretty.Log("Finishing QueueManager")
+			glog.Warningln("Finishing QueueManager")
 			wg.Done()
 			return
 		case <-ticker.C:
@@ -121,7 +121,7 @@ func QueueManager(wg *sync.WaitGroup, finishChan <-chan struct{}, ticker *time.T
 					cb, cbc := GetCallback()
 					command := fmt.Sprintf("database get %s %s", "queues/u2q", number)
 					if err := ami.GetAMI().Command(command, &cb); err != nil {
-						pretty.Log(err)
+						glog.Errorln(err)
 						continue
 					}
 					resp := <-cbc
@@ -130,7 +130,7 @@ func QueueManager(wg *sync.WaitGroup, finishChan <-chan struct{}, ticker *time.T
 						// No static queue for such number - skip
 						continue
 					}
-					pretty.Log(settings, val)
+					glog.Infoln(settings, val)
 				}
 			}
 		}
@@ -139,8 +139,6 @@ func QueueManager(wg *sync.WaitGroup, finishChan <-chan struct{}, ticker *time.T
 
 func CdrEventHandler(m gami.Message) {
 	innerPhoneNumber, opponentPhoneNumber, callType := GetPhoneDetails(m)
-	// pretty.Log(m)
-	// pretty.Log(innerPhoneNumber, opponentPhoneNumber, callType)
 	if callType != INNER_CALL && callType != -1 {
 		countryCode := ""
 		innerPhones := InnerPhonesNumber
@@ -153,13 +151,13 @@ func CdrEventHandler(m gami.Message) {
 		if countryCode != "" {
 			m["InnerPhoneNumber"] = innerPhoneNumber
 			m["OpponentPhoneNumber"] = opponentPhoneNumber
-			m["CallType"] = string(callType)
+			m["CallType"] = strconv.Itoa(callType)
 			m["CountryCode"] = countryCode
-			pretty.Log("Reading message -", m["UniqueID"])
-			pretty.Log(m)
+			glog.Infoln("Reading message -", m["UniqueID"])
+			glog.Infoln(m)
 			db.PutChan <- m
 		} else {
-			pretty.Log("Unexisting numbers...", innerPhoneNumber, opponentPhoneNumber)
+			glog.Errorln("Unexisting numbers...", innerPhoneNumber, opponentPhoneNumber)
 		}
 	}
 }

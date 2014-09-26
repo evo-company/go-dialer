@@ -3,11 +3,11 @@ package conf
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/parnurzeal/gorequest"
 
 	"github.com/warik/dialer/model"
@@ -28,8 +28,8 @@ const (
 var conf Configuration
 
 var PORTAL_MAP = map[string]string{
-	// "ua": "http://my.example.com:5000/",
-	"ua": "http://my.trunk.uaprom/",
+	"ua": "http://my.example.com:5000/",
+	// "ua": "http://my.trunk.uaprom/",
 	// "ua": "https://my.prom.ua/",
 	"ru": "https://my.tiu.ru/",
 	"by": "https://my.deal.by/",
@@ -78,7 +78,7 @@ func Alert(msg string) {
 		_, _, errs := gorequest.New().Get(url).Query(params).End()
 		if len(errs) != 0 {
 			for _, err := range errs {
-				log.Println(err)
+				glog.Errorln(err)
 			}
 		}
 	}

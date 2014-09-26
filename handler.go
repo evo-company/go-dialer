@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/boltdb/bolt"
-	"github.com/kr/pretty"
+	"github.com/golang/glog"
 	"github.com/warik/gami"
 
 	"github.com/warik/dialer/ami"
@@ -68,6 +68,7 @@ func ManagerCallAfterHours(p interface{}, w http.ResponseWriter, r *http.Request
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	} else {
+		glog.Info(resp)
 		fmt.Fprint(w, model.Response{"status": resp})
 	}
 }
@@ -84,6 +85,7 @@ func ShowCallingReview(p interface{}, w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	} else {
+		glog.Info(resp)
 		fmt.Fprint(w, model.Response{"status": resp})
 	}
 }
@@ -100,6 +102,7 @@ func ShowCallingPopup(p interface{}, w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	} else {
+		glog.Info(resp)
 		fmt.Fprint(w, model.Response{"status": resp})
 	}
 }
@@ -113,6 +116,7 @@ func ManagerPhoneForCompany(p interface{}, w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	} else {
+		glog.Info(resp)
 		fmt.Fprint(w, model.Response{"inner_number": resp})
 	}
 }
@@ -126,6 +130,7 @@ func ManagerPhone(p interface{}, w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	} else {
+		glog.Info(resp)
 		fmt.Fprint(w, model.Response{"inner_number": resp})
 	}
 }
@@ -234,5 +239,5 @@ func PingAsterisk(w http.ResponseWriter, r *http.Request) {
 }
 
 func ImUp(w http.ResponseWriter, r *http.Request) {
-	pretty.Println("Im up, Im up...")
+	glog.Infoln("Im up, Im up...")
 }

@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kr/pretty"
+	"github.com/golang/glog"
 	"github.com/parnurzeal/gorequest"
 	"github.com/vmihailenco/signer"
 	"github.com/warik/gami"
@@ -67,7 +67,7 @@ func getInnerNumbers() {
 		numbers, err := SendRequest(map[string]string{}, url, "GET", settings.Secret,
 			settings.CompanyId)
 		if err != nil {
-			pretty.Log(err)
+			glog.Errorln(err)
 			continue
 		}
 		temp[countryCode] = map[string]string{}
@@ -76,6 +76,7 @@ func getInnerNumbers() {
 		}
 	}
 	InnerPhonesNumber = temp
+	glog.Infoln("Inner numbers", InnerPhonesNumber)
 }
 
 func GetPhoneDetails(m gami.Message) (string, string, int) {
@@ -114,7 +115,6 @@ func GetPhoneDetails(m gami.Message) (string, string, int) {
 func GetCallback() (cb func(gami.Message), cbc chan gami.Message) {
 	cbc = make(chan gami.Message)
 	cb = func(m gami.Message) {
-		// pretty.Log("Handling response...")
 		cbc <- m
 	}
 	return
@@ -126,8 +126,9 @@ func WriteResponse(
 	statusFromResponse bool,
 	dataKey string,
 ) {
+	glog.Infoln("Response", resp)
+
 	var status string
-	pretty.Log(resp)
 	if statusFromResponse {
 		status = strings.ToLower(resp["Response"])
 	}

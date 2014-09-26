@@ -3,10 +3,10 @@ package ami
 import (
 	"time"
 
-	"github.com/kr/pretty"
+	"github.com/golang/glog"
+	"github.com/warik/gami"
 
 	"github.com/warik/dialer/conf"
-	"github.com/warik/gami"
 )
 
 var ami *gami.Asterisk
@@ -17,7 +17,7 @@ func connectAndLogin(a *gami.Asterisk) {
 		messageAlreadySent := false
 		if err := a.Start(); err != nil {
 			wasError = true
-			pretty.Log("Trying to reconnect and relogin...")
+			glog.Warningln("Trying to reconnect and relogin...")
 			if !messageAlreadySent {
 				conf.Alert("Lost connection with asterisk")
 				messageAlreadySent = true

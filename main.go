@@ -1,12 +1,14 @@
 package main
 
 import (
+	"flag"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/kr/pretty"
+	"github.com/golang/glog"
 	"github.com/warik/gami"
 	"github.com/zenazn/goji"
 	"github.com/zenazn/goji/graceful"
@@ -16,7 +18,13 @@ import (
 	"github.com/warik/dialer/model"
 )
 
+func init() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+}
+
 func main() {
+	flag.Parse()
+
 	// Lets get inner numbers first of all
 	getInnerNumbers()
 
@@ -30,7 +38,7 @@ func main() {
 		if strings.HasPrefix(m["Name"], "Local") {
 			queues = append(queues, m["Queue"])
 		}
-		// pretty.Log(len(queues))
+		// glog.Infoln(len(queues))
 	}
 	ami.GetAMI().RegisterHandler("QueueMember", &queueh)
 	// QueueStatusComplete
@@ -82,14 +90,14 @@ func initRoutes() {
 	goji.Post("/queue_remove", withSignedParams(new(model.Queue), QueueRemove))
 
 	// API for asterisk
-	goji.Get("/manager_phone", withStructParams(new(model.PhoneCall), ManagerPhone))
-	goji.Get("/manager_phone_for_company",
+	goji.Get("/api/manager_phone", withStructParams(new(model.PhoneCall), ManagerPhone))
+	goji.Get("/api/manager_phone_for_company",
 		withStructParams(new(model.PhoneCall), ManagerPhoneForCompany))
-	goji.Get("/show_calling_popup_to_manager",
+	goji.Get("/api/show_calling_popup_to_manager",
 		withStructParams(new(model.PhoneCall), ShowCallingPopup))
-	goji.Get("/show_calling_review_popup_to_manager",
+	goji.Get("/api/show_calling_review_popup_to_manager",
 		withStructParams(new(model.PhoneCall), ShowCallingReview))
-	goji.Get("/manager_call_after_hours",
+	goji.Get("/api/manager_call_after_hours",
 		withStructParams(new(model.PhoneCall), ManagerCallAfterHours))
 
 	goji.Use(JSONReponse)
@@ -112,7 +120,7 @@ func AllowedRemoteAddress(h http.Handler) http.Handler {
 				return
 			}
 		}
-		pretty.Log("Request from not allowed IP", r.RemoteAddr)
+		glog.Warningln("Request from not allowed IP", r.RemoteAddr)
 		http.Error(w, "Not allowed remote address", http.StatusUnauthorized)
 	}
 	return http.HandlerFunc(fn)
@@ -127,11 +135,11 @@ func withSignedParams(i interface{}, h func(interface{}, http.ResponseWriter,
 			return
 		}
 		if err := UnsignData(i, (*signedData)); err != nil {
-			pretty.Log(err.Error())
+			glog.Errorln(err.Error())
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
 		}
-		pretty.Log(i)
+		glog.Infoln("Input params", i)
 		h(i, w, r)
 	}
 }
@@ -143,7 +151,7 @@ func withStructParams(i interface{}, h func(interface{}, http.ResponseWriter,
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		pretty.Log(i)
+		glog.Infoln("Input params", i)
 		h(i, w, r)
 	}
 }
