@@ -47,12 +47,10 @@ func main() {
 	go CdrReader(&wg, cdrChan, finishChannels[len(finishChannels)-1],
 		time.NewTicker(conf.CDR_READ_INTERVAL))
 
-	// Handlers are sending requests to corresponding portals,
-	// so their number must be same as number of countries which agency working in
-	for i := 0; i < conf.HANDLERS_NUMBER; i++ {
-		finishChannels = append(finishChannels, make(chan struct{}))
-		go CdrSaver(&wg, cdrChan, finishChannels[len(finishChannels)-1], i)
-	}
+	// for i := 0; i < conf.HANDLERS_NUMBER; i++ {
+	// 	finishChannels = append(finishChannels, make(chan struct{}))
+	// 	go CdrSaver(&wg, cdrChan, finishChannels[len(finishChannels)-1], i)
+	// }
 
 	finishChannels = append(finishChannels, make(chan struct{}))
 	go DbHandler(&wg, finishChannels[len(finishChannels)-1])
@@ -86,8 +84,8 @@ func initRoutes() {
 	// goji.Get("/db_get", withSignedParams(new(model.DbGetter), DBGet))
 	goji.Post("/call", withSignedParams(new(model.Call), PlaceCall))
 	goji.Post("/spy", withSignedParams(new(model.Call), PlaceSpy))
-	goji.Post("/queue_add", withSignedParams(new(model.Queue), QueueAdd))
-	goji.Post("/queue_remove", withSignedParams(new(model.Queue), QueueRemove))
+	goji.Post("/queue_add", withSignedParams(new(model.PhoneCall), QueueAdd))
+	goji.Post("/queue_remove", withSignedParams(new(model.PhoneCall), QueueRemove))
 
 	// API for asterisk
 	goji.Get("/api/manager_phone", withStructParams(new(model.PhoneCall), ManagerPhone))

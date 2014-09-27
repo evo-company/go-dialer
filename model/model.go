@@ -36,22 +36,11 @@ func (c Call) GetCallerID() string {
 	return fmt.Sprintf("call_from_CRM <%v>", c.Inline)
 }
 
-type Queue struct {
-	Queue          string `param:"queue"`
-	Interface      string `param:"interface"`
-	StateInterface string `param:"state_interface"`
-}
-
-type DbGetter struct {
-	Family string `param:"family"`
-	Key    string `param:"key"`
-}
-
 type PhoneCall struct {
 	CallingPhone string `param:"calling_phone"`
-	Country      string `param:"country"`
+	Country      string `param:"country" json:"country"`
 	Id           string `param:"id"`
-	InnerNumber  string `param:"inner_number"`
+	InnerNumber  string `param:"inner_number" json:"inner_number"`
 	ReviewHref   string `param:"review_href"`
 }
 

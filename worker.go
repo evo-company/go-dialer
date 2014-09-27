@@ -117,6 +117,7 @@ func QueueManager(wg *sync.WaitGroup, finishChan <-chan struct{}, ticker *time.T
 			getInnerNumbers()
 			_ = ami.GetAMI().SendAction(gami.Message{"Action": "QueueStatus"}, nil)
 			for countryCode, settings := range conf.GetConf().Agencies {
+				queuestStates := map[string]string{}
 				for number, _ := range InnerPhonesNumber[countryCode] {
 					cb, cbc := GetCallback()
 					command := fmt.Sprintf("database get %s %s", "queues/u2q", number)
@@ -131,6 +132,12 @@ func QueueManager(wg *sync.WaitGroup, finishChan <-chan struct{}, ticker *time.T
 						continue
 					}
 					glog.Infoln(settings, val)
+				}
+				url := conf.GetConf().GetApi(countryCode, "save_queues_state")
+				_, err := SendRequest(queuestStates, url, "POST", settings.Secret,
+					settings.CompanyId)
+				if err != nil {
+					glog.Errorln(err)
 				}
 			}
 		}

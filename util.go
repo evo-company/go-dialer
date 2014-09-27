@@ -79,6 +79,27 @@ func getInnerNumbers() {
 	glog.Infoln("Inner numbers", InnerPhonesNumber)
 }
 
+func GetInterface(country, innerNumber string) (string, string) {
+	state := fmt.Sprintf("SIP/%s", innerNumber)
+	ifc := fmt.Sprintf("Local/%s%s@Queue_Members/n", innerNumber, country)
+	return ifc, state
+}
+
+func GetQueue(innerNumber string) (string, error) {
+	cb, cbc := GetCallback()
+	command := fmt.Sprintf("database get %s %s", "queues/u2q", innerNumber)
+	if err := ami.GetAMI().Command(command, &cb); err != nil {
+		return "", err
+	} else {
+		resp := <-cbc
+		if val, ok := resp["Value"]; ok {
+			return val, nil
+		} else {
+			return "", errors.New(resp["CmdData"])
+		}
+	}
+}
+
 func GetPhoneDetails(m gami.Message) (string, string, int) {
 	re, _ := regexp.Compile("^\\w+/(\\d{2,4}|\\d{4}\\w{2})\\D*-.+$")
 	in := re.FindStringSubmatch(m["Channel"])
@@ -152,7 +173,6 @@ func UnsignData(i interface{}, d model.SignedInputData) error {
 	if !ok {
 		return errors.New(fmt.Sprintf("Bad signature - %s", strings.Split(d.Data, ".")[1]))
 	}
-
 	return json.Unmarshal(dataString, &i)
 }
 

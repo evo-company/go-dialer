@@ -135,17 +135,6 @@ func ManagerPhone(p interface{}, w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func DBGet(p interface{}, w http.ResponseWriter, r *http.Request) {
-	dbGetter := (*p.(*model.DbGetter))
-	cb, cbc := GetCallback()
-	command := fmt.Sprintf("database get %s %s", dbGetter.Family, dbGetter.Key)
-	if err := ami.GetAMI().Command(command, &cb); err != nil {
-		fmt.Fprint(w, model.Response{"status": "error", "error": err})
-	} else {
-		WriteResponse(w, <-cbc, false, "Value")
-	}
-}
-
 func QueueStatus(p interface{}, w http.ResponseWriter, r *http.Request) {
 	cb, cbc := GetCallback()
 	m := gami.Message{"Action": "QueueStatus"}
@@ -157,10 +146,19 @@ func QueueStatus(p interface{}, w http.ResponseWriter, r *http.Request) {
 }
 
 func QueueRemove(p interface{}, w http.ResponseWriter, r *http.Request) {
-	queue := (*p.(*model.Queue))
+	call := (*p.(*model.PhoneCall))
 	cb, cbc := GetCallback()
-	m := gami.Message{"Action": "QueueRemove", "Queue": queue.Queue, "Interface": queue.Interface}
+	queue, err := GetQueue(call.InnerNumber)
+	if err != nil {
+		glog.Errorln(err)
+		fmt.Fprint(w, model.Response{"status": "error", "error": err})
+		return
+	}
+	ifc, _ := GetInterface(call.Country, call.InnerNumber)
+	glog.Infoln(ifc)
+	m := gami.Message{"Action": "QueueRemove", "Queue": queue, "Interface": ifc}
 	if err := ami.GetAMI().SendAction(m, &cb); err != nil {
+		glog.Errorln(err)
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 	} else {
 		WriteResponse(w, <-cbc, true, "Message")
@@ -168,15 +166,23 @@ func QueueRemove(p interface{}, w http.ResponseWriter, r *http.Request) {
 }
 
 func QueueAdd(p interface{}, w http.ResponseWriter, r *http.Request) {
-	queue := (*p.(*model.Queue))
+	call := (*p.(*model.PhoneCall))
 	cb, cbc := GetCallback()
+	queue, err := GetQueue(call.InnerNumber)
+	if err != nil {
+		glog.Errorln(err)
+		fmt.Fprint(w, model.Response{"status": "error", "error": err})
+		return
+	}
+	ifc, state := GetInterface(call.Country, call.InnerNumber)
 	m := gami.Message{
 		"Action":         "QueueAdd",
-		"Queue":          queue.Queue,
-		"Interface":      queue.Interface,
-		"StateInterface": queue.StateInterface,
+		"Queue":          queue,
+		"Interface":      ifc,
+		"StateInterface": state,
 	}
 	if err := ami.GetAMI().SendAction(m, &cb); err != nil {
+		glog.Errorln(err)
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 	} else {
 		WriteResponse(w, <-cbc, true, "Message")
@@ -190,6 +196,7 @@ func PlaceSpy(p interface{}, w http.ResponseWriter, r *http.Request) {
 
 	cb, cbc := GetCallback()
 	if err := ami.GetAMI().Originate(o, nil, &cb); err != nil {
+		glog.Errorln(err)
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 	} else {
 		WriteResponse(w, <-cbc, true, "Message")
@@ -199,6 +206,7 @@ func PlaceSpy(p interface{}, w http.ResponseWriter, r *http.Request) {
 func ShowChannels(p interface{}, w http.ResponseWriter, r *http.Request) {
 	cb, cbc := GetCallback()
 	if err := ami.GetAMI().Command("sip show inuse", &cb); err != nil {
+		glog.Errorln(err)
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 	} else {
 		WriteResponse(w, <-cbc, false, "CmdData")
@@ -223,6 +231,7 @@ func PlaceCall(p interface{}, w http.ResponseWriter, r *http.Request) {
 
 	cb, cbc := GetCallback()
 	if err := ami.GetAMI().Originate(o, nil, &cb); err != nil {
+		glog.Errorln(err)
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 	} else {
 		WriteResponse(w, <-cbc, true, "Message")
@@ -232,6 +241,7 @@ func PlaceCall(p interface{}, w http.ResponseWriter, r *http.Request) {
 func PingAsterisk(w http.ResponseWriter, r *http.Request) {
 	cb, cbc := GetCallback()
 	if err := ami.GetAMI().SendAction(gami.Message{"Action": "Ping"}, &cb); err != nil {
+		glog.Errorln(err)
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 	} else {
 		WriteResponse(w, <-cbc, true, "Ping")
