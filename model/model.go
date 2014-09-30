@@ -8,6 +8,7 @@ import (
 	"github.com/zenazn/goji/param"
 )
 
+type Set map[string]struct{}
 type Response map[string]interface{}
 
 func (r Response) String() string {

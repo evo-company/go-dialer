@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,7 +37,7 @@ func CdrReader(wg *sync.WaitGroup, cdrChan chan<- gami.Message, finishChan <-cha
 					conf.Alert(fmt.Sprintf("Too much cdrs - %s", strconv.Itoa(totalCdrNum)))
 				}
 
-				glog.Infoln(fmt.Sprintf("Reading data. Total-%s;Processing-%s ",
+				glog.Infoln(fmt.Sprintf("<<< READING. TOTAL-%s;PROCESS-%s ",
 					strconv.Itoa(totalCdrNum),
 					strconv.Itoa(min(totalCdrNum, conf.MAX_CDR_NUMBER))))
 				c := b.Cursor()
@@ -62,7 +63,7 @@ func CdrSaver(wg *sync.WaitGroup, cdrChan <-chan gami.Message, finishChan <-chan
 			wg.Done()
 			return
 		case m := <-cdrChan:
-			glog.Infoln("Processing message -", m["UniqueID"])
+			glog.Infoln("<<< PROCESSING MSG", m["UniqueID"])
 
 			settings := conf.GetConf().Agencies[m["CountryCode"]]
 			url := conf.GetConf().GetApi(m["CountryCode"], "save_phone_call")
@@ -87,7 +88,7 @@ func DbHandler(wg *sync.WaitGroup, finishChan <-chan struct{}) {
 			_ = db.GetDB().Update(func(tx *bolt.Tx) error {
 				b := tx.Bucket([]byte(conf.BOLT_CDR_BUCKET))
 				if err := b.Delete([]byte(m["UniqueID"])); err != nil {
-					glog.Infoln("Error while deleting message - ", m["UniqueID"])
+					glog.Errorln("Error while deleting message - ", m["UniqueID"])
 				}
 				return nil
 			})
@@ -105,36 +106,63 @@ func DbHandler(wg *sync.WaitGroup, finishChan <-chan struct{}) {
 	}
 }
 
-func QueueManager(wg *sync.WaitGroup, finishChan <-chan struct{}, ticker *time.Ticker) {
+func QueueManager(wg *sync.WaitGroup, queueTransport <-chan chan gami.Message, finishChan <-chan struct{},
+	ticker *time.Ticker) {
 	wg.Add(1)
 	for {
 		select {
 		case <-finishChan:
 			glog.Warningln("Finishing QueueManager")
+			ticker.Stop()
 			wg.Done()
 			return
 		case <-ticker.C:
+			glog.Infoln("QueueManager starts to check...")
 			getInnerNumbers()
-			_ = ami.GetAMI().SendAction(gami.Message{"Action": "QueueStatus"}, nil)
+			// Send queue status to AMI
+			if err := ami.QueueStatus(); err != nil {
+				glog.Errorln(err)
+				return
+			}
+			// and wait for channel with active queues from asterisk
+			activeQueuesChan := <-queueTransport
+			// sort active queues for each number per country
+			queuesNumberMap := GetActiveQueuesMap(activeQueuesChan)
 			for countryCode, settings := range conf.GetConf().Agencies {
-				queuestStates := map[string]string{}
+				tqs := queuesNumberMap[countryCode]
+				numbersState := make(Dict)
+				// For each inner number get its static queue from asterisk db
 				for number, _ := range InnerPhonesNumber[countryCode] {
-					cb, cbc := GetCallback()
-					command := fmt.Sprintf("database get %s %s", "queues/u2q", number)
-					if err := ami.GetAMI().Command(command, &cb); err != nil {
-						glog.Errorln(err)
+					staticQueue, err := ami.GetStaticQueue(number)
+					if err != nil {
+						// if there is no static queue for number - some problem with it, skip
 						continue
 					}
-					resp := <-cbc
-					val, ok := resp["Value"]
-					if !ok {
-						// No static queue for such number - skip
-						continue
+					staticQueue = strings.Split(staticQueue, "\n")[0]
+					// if there is no active queues for such number, then its not available
+					if _, ok := tqs[number]; !ok {
+						numbersState[number] = "not_available"
+					} else {
+						// if there are some, which are not its static queue and not general queue
+						// (same as static but without last digit)
+						// then number should be removed from them and still not available
+						status := "not_available"
+						for _, queue := range tqs[number] {
+							generalizedQueue := staticQueue[:len(staticQueue)-1]
+							if staticQueue == queue || generalizedQueue == queue {
+								status = "available"
+							} else {
+								// _, err := ami.RemoveFromQueue(queue, countryCode, number)
+								// if err != nil {
+								// 	glog.Errorln(err, number)
+								// }
+							}
+						}
+						numbersState[number] = status
 					}
-					glog.Infoln(settings, val)
 				}
-				url := conf.GetConf().GetApi(countryCode, "save_queues_state")
-				_, err := SendRequest(queuestStates, url, "POST", settings.Secret,
+				url := conf.GetConf().GetApi(countryCode, "save_company_queues_states")
+				_, err := SendRequest(numbersState, url, "POST", settings.Secret,
 					settings.CompanyId)
 				if err != nil {
 					glog.Errorln(err)
@@ -160,7 +188,7 @@ func CdrEventHandler(m gami.Message) {
 			m["OpponentPhoneNumber"] = opponentPhoneNumber
 			m["CallType"] = strconv.Itoa(callType)
 			m["CountryCode"] = countryCode
-			glog.Infoln("Reading message -", m["UniqueID"])
+			glog.Infoln("<<< READING MSG", m["UniqueID"])
 			glog.Infoln(m)
 			db.PutChan <- m
 		} else {

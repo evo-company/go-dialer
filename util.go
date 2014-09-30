@@ -32,7 +32,9 @@ const (
 	INCOMING_CALL_HIDDEN
 )
 
-var InnerPhonesNumber map[string]map[string]string
+type Dict map[string]string
+
+var InnerPhonesNumber map[string]model.Set
 
 func min(a, b int) int {
 	if a <= b {
@@ -61,43 +63,45 @@ func signData(m map[string]string, secret string) (signedData string, err error)
 }
 
 func getInnerNumbers() {
-	temp := map[string]map[string]string{}
+	temp := map[string]model.Set{}
 	for countryCode, settings := range conf.GetConf().Agencies {
 		url := conf.GetConf().GetApi(countryCode, "get_employees_inner_phone")
-		numbers, err := SendRequest(map[string]string{}, url, "GET", settings.Secret,
+		numbers, err := SendRequest(Dict{}, url, "GET", settings.Secret,
 			settings.CompanyId)
 		if err != nil {
 			glog.Errorln(err)
 			continue
 		}
-		temp[countryCode] = map[string]string{}
+		temp[countryCode] = model.Set{}
 		for _, number := range strings.Split(numbers, ",") {
-			temp[countryCode][number] = ""
+			temp[countryCode][number] = struct{}{}
 		}
 	}
 	InnerPhonesNumber = temp
-	glog.Infoln("Inner numbers", InnerPhonesNumber)
+	glog.Infoln("<<< INNER NUMBERS", InnerPhonesNumber)
 }
 
-func GetInterface(country, innerNumber string) (string, string) {
-	state := fmt.Sprintf("SIP/%s", innerNumber)
-	ifc := fmt.Sprintf("Local/%s%s@Queue_Members/n", innerNumber, country)
-	return ifc, state
-}
-
-func GetQueue(innerNumber string) (string, error) {
-	cb, cbc := GetCallback()
-	command := fmt.Sprintf("database get %s %s", "queues/u2q", innerNumber)
-	if err := ami.GetAMI().Command(command, &cb); err != nil {
-		return "", err
-	} else {
-		resp := <-cbc
-		if val, ok := resp["Value"]; ok {
-			return val, nil
+func GetActiveQueuesMap(activeQueuesChan <-chan gami.Message) (
+	queuesNumberMap map[string]map[string][]string) {
+	queuesNumberMap = make(map[string]map[string][]string)
+	for len(activeQueuesChan) > 0 {
+		qm := <-activeQueuesChan
+		queue, number, country := qm["Queue"], qm["Name"][6:10], qm["Name"][10:12]
+		// If its static queue then it doesn't attach to country, so just skip
+		if country != "ua" && country != "ru" {
+			continue
+		}
+		if _, ok := queuesNumberMap[country]; !ok {
+			queuesNumberMap[country] = make(map[string][]string)
+		}
+		activeQueues, ok := queuesNumberMap[country][number]
+		if !ok {
+			queuesNumberMap[country][number] = []string{queue}
 		} else {
-			return "", errors.New(resp["CmdData"])
+			queuesNumberMap[country][number] = append(activeQueues, queue)
 		}
 	}
+	return
 }
 
 func GetPhoneDetails(m gami.Message) (string, string, int) {
@@ -133,21 +137,9 @@ func GetPhoneDetails(m gami.Message) (string, string, int) {
 	}
 }
 
-func GetCallback() (cb func(gami.Message), cbc chan gami.Message) {
-	cbc = make(chan gami.Message)
-	cb = func(m gami.Message) {
-		cbc <- m
-	}
-	return
-}
-
-func WriteResponse(
-	w http.ResponseWriter,
-	resp gami.Message,
-	statusFromResponse bool,
-	dataKey string,
-) {
-	glog.Infoln("Response", resp)
+func WriteResponse(w http.ResponseWriter, resp gami.Message, statusFromResponse bool,
+	dataKey string) {
+	glog.Infoln("<<< RESPONSE", resp)
 
 	var status string
 	if statusFromResponse {

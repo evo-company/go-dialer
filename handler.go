@@ -61,7 +61,7 @@ func GetCdr(p interface{}, w http.ResponseWriter, r *http.Request) {
 
 func ManagerCallAfterHours(p interface{}, w http.ResponseWriter, r *http.Request) {
 	phoneCall := (*p.(*model.PhoneCall))
-	payload := map[string]string{"calling_phone": phoneCall.CallingPhone}
+	payload := Dict{"calling_phone": phoneCall.CallingPhone}
 	url := conf.GetConf().GetApi(phoneCall.Country, "manager_call_after_hours")
 	settings := conf.GetConf().Agencies[phoneCall.Country]
 	resp, err := SendRequest(payload, url, "POST", settings.Secret, settings.CompanyId)
@@ -75,7 +75,7 @@ func ManagerCallAfterHours(p interface{}, w http.ResponseWriter, r *http.Request
 
 func ShowCallingReview(p interface{}, w http.ResponseWriter, r *http.Request) {
 	phoneCall := (*p.(*model.PhoneCall))
-	payload := map[string]string{
+	payload := Dict{
 		"inner_number": phoneCall.InnerNumber,
 		"review_href":  phoneCall.ReviewHref,
 	}
@@ -92,7 +92,7 @@ func ShowCallingReview(p interface{}, w http.ResponseWriter, r *http.Request) {
 
 func ShowCallingPopup(p interface{}, w http.ResponseWriter, r *http.Request) {
 	phoneCall := (*p.(*model.PhoneCall))
-	payload := map[string]string{
+	payload := Dict{
 		"inner_number":  phoneCall.InnerNumber,
 		"calling_phone": phoneCall.CallingPhone,
 	}
@@ -109,7 +109,7 @@ func ShowCallingPopup(p interface{}, w http.ResponseWriter, r *http.Request) {
 
 func ManagerPhoneForCompany(p interface{}, w http.ResponseWriter, r *http.Request) {
 	phoneCall := (*p.(*model.PhoneCall))
-	payload := map[string]string{"id": phoneCall.Id}
+	payload := Dict{"id": phoneCall.Id}
 	url := conf.GetConf().GetApi(phoneCall.Country, "manager_phone_for_company")
 	settings := conf.GetConf().Agencies[phoneCall.Country]
 	resp, err := SendRequest(payload, url, "POST", settings.Secret, settings.CompanyId)
@@ -123,7 +123,7 @@ func ManagerPhoneForCompany(p interface{}, w http.ResponseWriter, r *http.Reques
 
 func ManagerPhone(p interface{}, w http.ResponseWriter, r *http.Request) {
 	phoneCall := (*p.(*model.PhoneCall))
-	payload := map[string]string{"calling_phone": phoneCall.CallingPhone}
+	payload := Dict{"calling_phone": phoneCall.CallingPhone}
 	url := conf.GetConf().GetApi(phoneCall.Country, "manager_phone")
 	settings := conf.GetConf().Agencies[phoneCall.Country]
 	resp, err := SendRequest(payload, url, "POST", settings.Secret, settings.CompanyId)
@@ -135,57 +135,37 @@ func ManagerPhone(p interface{}, w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func QueueStatus(p interface{}, w http.ResponseWriter, r *http.Request) {
-	cb, cbc := GetCallback()
-	m := gami.Message{"Action": "QueueStatus"}
-	if err := ami.GetAMI().SendAction(m, &cb); err != nil {
-		fmt.Fprint(w, model.Response{"status": "error", "error": err})
-	} else {
-		WriteResponse(w, <-cbc, true, "Message")
-	}
-}
-
 func QueueRemove(p interface{}, w http.ResponseWriter, r *http.Request) {
 	call := (*p.(*model.PhoneCall))
-	cb, cbc := GetCallback()
-	queue, err := GetQueue(call.InnerNumber)
+	queue, err := ami.GetStaticQueue(call.InnerNumber)
 	if err != nil {
 		glog.Errorln(err)
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 		return
 	}
-	ifc, _ := GetInterface(call.Country, call.InnerNumber)
-	glog.Infoln(ifc)
-	m := gami.Message{"Action": "QueueRemove", "Queue": queue, "Interface": ifc}
-	if err := ami.GetAMI().SendAction(m, &cb); err != nil {
+	resp, err := ami.RemoveFromQueue(queue, call.Country, call.InnerNumber)
+	if err != nil {
 		glog.Errorln(err)
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 	} else {
-		WriteResponse(w, <-cbc, true, "Message")
+		WriteResponse(w, resp, true, "Message")
 	}
 }
 
 func QueueAdd(p interface{}, w http.ResponseWriter, r *http.Request) {
 	call := (*p.(*model.PhoneCall))
-	cb, cbc := GetCallback()
-	queue, err := GetQueue(call.InnerNumber)
+	queue, err := ami.GetStaticQueue(call.InnerNumber)
 	if err != nil {
 		glog.Errorln(err)
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 		return
 	}
-	ifc, state := GetInterface(call.Country, call.InnerNumber)
-	m := gami.Message{
-		"Action":         "QueueAdd",
-		"Queue":          queue,
-		"Interface":      ifc,
-		"StateInterface": state,
-	}
-	if err := ami.GetAMI().SendAction(m, &cb); err != nil {
+	resp, err := ami.AddToQueue(queue, call.Country, call.InnerNumber)
+	if err != nil {
 		glog.Errorln(err)
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 	} else {
-		WriteResponse(w, <-cbc, true, "Message")
+		WriteResponse(w, resp, true, "Message")
 	}
 }
 
@@ -194,7 +174,7 @@ func PlaceSpy(p interface{}, w http.ResponseWriter, r *http.Request) {
 	o := gami.NewOriginateApp(call.GetChannel(), "ChanSpy", fmt.Sprintf("SIP/%v", call.Exten))
 	o.Async = true
 
-	cb, cbc := GetCallback()
+	cb, cbc := ami.GetCallback()
 	if err := ami.GetAMI().Originate(o, nil, &cb); err != nil {
 		glog.Errorln(err)
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
@@ -204,7 +184,7 @@ func PlaceSpy(p interface{}, w http.ResponseWriter, r *http.Request) {
 }
 
 func ShowChannels(p interface{}, w http.ResponseWriter, r *http.Request) {
-	cb, cbc := GetCallback()
+	cb, cbc := ami.GetCallback()
 	if err := ami.GetAMI().Command("sip show inuse", &cb); err != nil {
 		glog.Errorln(err)
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
@@ -214,7 +194,7 @@ func ShowChannels(p interface{}, w http.ResponseWriter, r *http.Request) {
 }
 
 func ShowInuse(p interface{}, w http.ResponseWriter, r *http.Request) {
-	cb, cbc := GetCallback()
+	cb, cbc := ami.GetCallback()
 	if err := ami.GetAMI().Command("sip show inuse", &cb); err != nil {
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
 	} else {
@@ -229,7 +209,7 @@ func PlaceCall(p interface{}, w http.ResponseWriter, r *http.Request) {
 	o.CallerID = call.GetCallerID()
 	o.Async = true
 
-	cb, cbc := GetCallback()
+	cb, cbc := ami.GetCallback()
 	if err := ami.GetAMI().Originate(o, nil, &cb); err != nil {
 		glog.Errorln(err)
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})
@@ -239,7 +219,7 @@ func PlaceCall(p interface{}, w http.ResponseWriter, r *http.Request) {
 }
 
 func PingAsterisk(w http.ResponseWriter, r *http.Request) {
-	cb, cbc := GetCallback()
+	cb, cbc := ami.GetCallback()
 	if err := ami.GetAMI().SendAction(gami.Message{"Action": "Ping"}, &cb); err != nil {
 		glog.Errorln(err)
 		fmt.Fprint(w, model.Response{"status": "error", "error": err})

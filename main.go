@@ -30,34 +30,45 @@ func main() {
 
 	wg := sync.WaitGroup{}
 
-	h := CdrEventHandler
-	ami.GetAMI().RegisterHandler("Cdr", &h)
+	// CdrEventHandler reads cdrs, processes them and stores in db for further sending to
+	// corresponding portals
+	ceh := CdrEventHandler
+	ami.GetAMI().RegisterHandler("Cdr", &ceh)
 
-	queues := []string{}
-	queueh := func(m gami.Message) {
+	// We need QueueMember handler for gather information about current queue occupations
+	// those events start to come after QueueStatus action will be sent
+	queueStatusChan := make(chan gami.Message, 1000)
+	qmh := func(m gami.Message) {
 		if strings.HasPrefix(m["Name"], "Local") {
-			queues = append(queues, m["Queue"])
+			queueStatusChan <- m
 		}
-		// glog.Infoln(len(queues))
 	}
-	ami.GetAMI().RegisterHandler("QueueMember", &queueh)
-	// QueueStatusComplete
-	cdrChan := make(chan gami.Message)
+	ami.GetAMI().RegisterHandler("QueueMember", &qmh)
+
+	// QueueStatusComplete tells us that queueMember events were sent, so we can send this
+	// info to queueManager and use for determination of managers states in queues
+	queueTransport := make(chan chan gami.Message)
+	qsch := func(m gami.Message) {
+		queueTransport <- queueStatusChan
+	}
+	ami.GetAMI().RegisterHandler("QueueStatusComplete", &qsch)
+
+	cdrChan := make(chan gami.Message, conf.MAX_CDR_NUMBER)
 	finishChannels := []chan struct{}{make(chan struct{})}
 	go CdrReader(&wg, cdrChan, finishChannels[len(finishChannels)-1],
 		time.NewTicker(conf.CDR_READ_INTERVAL))
 
-	// for i := 0; i < conf.HANDLERS_NUMBER; i++ {
-	// 	finishChannels = append(finishChannels, make(chan struct{}))
-	// 	go CdrSaver(&wg, cdrChan, finishChannels[len(finishChannels)-1], i)
-	// }
+	for i := 0; i < conf.HANDLERS_NUMBER; i++ {
+		finishChannels = append(finishChannels, make(chan struct{}))
+		go CdrSaver(&wg, cdrChan, finishChannels[len(finishChannels)-1], i)
+	}
 
 	finishChannels = append(finishChannels, make(chan struct{}))
 	go DbHandler(&wg, finishChannels[len(finishChannels)-1])
 
 	if conf.GetConf().Name == "prom" {
 		finishChannels = append(finishChannels, make(chan struct{}))
-		go QueueManager(&wg, finishChannels[len(finishChannels)-1],
+		go QueueManager(&wg, queueTransport, finishChannels[len(finishChannels)-1],
 			time.NewTicker(conf.QUEUE_RENEW_INTERVAL))
 	}
 
@@ -80,8 +91,6 @@ func initRoutes() {
 	//API for prom
 	goji.Get("/show_inuse", withSignedParams(new(model.DummyStruct), ShowInuse))
 	goji.Get("/show_channels", withSignedParams(new(model.DummyStruct), ShowChannels))
-	// goji.Get("/queue_status", withSignedParams(new(model.DummyStruct), QueueStatus))
-	// goji.Get("/db_get", withSignedParams(new(model.DbGetter), DBGet))
 	goji.Post("/call", withSignedParams(new(model.Call), PlaceCall))
 	goji.Post("/spy", withSignedParams(new(model.Call), PlaceSpy))
 	goji.Post("/queue_add", withSignedParams(new(model.PhoneCall), QueueAdd))
@@ -137,7 +146,7 @@ func withSignedParams(i interface{}, h func(interface{}, http.ResponseWriter,
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
 		}
-		glog.Infoln("Input params", i)
+		glog.Infoln("<<< INPUT PARAMS", i)
 		h(i, w, r)
 	}
 }
@@ -149,7 +158,7 @@ func withStructParams(i interface{}, h func(interface{}, http.ResponseWriter,
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		glog.Infoln("Input params", i)
+		glog.Infoln("<<< INPUT PARAMS", i)
 		h(i, w, r)
 	}
 }
