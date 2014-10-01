@@ -139,7 +139,11 @@ func GetPhoneDetails(m gami.Message) (string, string, int) {
 
 func WriteResponse(w http.ResponseWriter, resp gami.Message, statusFromResponse bool,
 	dataKey string) {
-	glog.Infoln("<<< RESPONSE", resp)
+	if r, ok := resp["Response"]; ok && r == "Follows" {
+		glog.Infoln("<<< RESPONSE...")
+	} else {
+		glog.Infoln("<<< RESPONSE", resp)
+	}
 
 	var status string
 	if statusFromResponse {
@@ -162,8 +166,9 @@ func UnsignData(i interface{}, d model.SignedInputData) error {
 	}, []byte(getKey(conf.GetConf().Agencies[d.Country].Secret)))
 	dataString, ok := signer.NewBase64Signer(h).Verify([]byte(d.Data))
 
-	if !ok {
-		return errors.New(fmt.Sprintf("Bad signature - %s", strings.Split(d.Data, ".")[1]))
+	signatureData := strings.Split(d.Data, ".")
+	if !ok || len(signatureData) < 2 {
+		return errors.New("Bad signature")
 	}
 	return json.Unmarshal(dataString, &i)
 }
@@ -172,10 +177,9 @@ func Clean(finishChannels []chan struct{}, wg *sync.WaitGroup) {
 	for _, channel := range finishChannels {
 		close(channel)
 	}
-	wg.Wait()
 	db.GetDB().Close()
 	ami.GetAMI().Logoff()
-	// panic("Manual panic for checking goroutines")
+	glog.Flush()
 }
 
 func SendRequest(m map[string]string, url, method, secret, companyId string) (string, error) {

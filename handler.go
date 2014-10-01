@@ -17,6 +17,31 @@ import (
 	"github.com/warik/dialer/model"
 )
 
+func CdrEventHandler(m gami.Message) {
+	innerPhoneNumber, opponentPhoneNumber, callType := GetPhoneDetails(m)
+	if callType != INNER_CALL && callType != -1 {
+		countryCode := ""
+		innerPhones := InnerPhonesNumber
+		for country, numbers := range innerPhones {
+			if _, ok := numbers[innerPhoneNumber]; ok {
+				countryCode = country
+				break
+			}
+		}
+		if countryCode != "" {
+			m["InnerPhoneNumber"] = innerPhoneNumber
+			m["OpponentPhoneNumber"] = opponentPhoneNumber
+			m["CallType"] = strconv.Itoa(callType)
+			m["CountryCode"] = countryCode
+			glog.Infoln("<<< READING MSG", m["UniqueID"])
+			glog.Infoln(m)
+			db.PutChan <- m
+		} else {
+			glog.Errorln("Unexisting numbers...", innerPhoneNumber, opponentPhoneNumber)
+		}
+	}
+}
+
 func DBStats(w http.ResponseWriter, r *http.Request) {
 	data, _ := json.Marshal(db.GetStats())
 	fmt.Fprint(w, string(data))

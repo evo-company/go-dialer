@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	REQUEST_TIMEOUT       = 5
+	REQUEST_TIMEOUT       = 15
 	CDR_READ_INTERVAL     = 30 * time.Second
-	QUEUE_RENEW_INTERVAL  = 1 * time.Minute
+	QUEUE_RENEW_INTERVAL  = 10 * time.Minute
 	REMOTE_ERROR_TEXT     = "Error on remote server, status code - %v"
 	CDR_DB_FILE           = "cdr_log.db"
 	MAX_CDR_NUMBER        = 50
@@ -28,10 +28,11 @@ const (
 var conf Configuration
 
 var PORTAL_MAP = map[string]string{
-	"ua": "http://my.example.com:5000/",
-	// "ua": "http://my.trunk.uaprom/",
+	// "ua": "http://my.example.com:5000/",
+	"ua": "http://my.trunk.uaprom/",
+	"ru": "http://my.ru-trunk.uaprom/",
 	// "ua": "https://my.prom.ua/",
-	"ru": "https://my.tiu.ru/",
+	// "ru": "https://my.tiu.ru/",
 	"by": "https://my.deal.by/",
 	"kz": "https://my.satu.kz/",
 }

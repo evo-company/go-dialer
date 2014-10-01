@@ -77,6 +77,8 @@ func main() {
 		Clean(finishChannels, &wg)
 	})
 	goji.Serve()
+	wg.Wait()
+	// panic("Manual panic for checking goroutines")
 }
 
 func initRoutes() {
@@ -90,7 +92,7 @@ func initRoutes() {
 
 	//API for prom
 	goji.Get("/show_inuse", withSignedParams(new(model.DummyStruct), ShowInuse))
-	goji.Get("/show_channels", withSignedParams(new(model.DummyStruct), ShowChannels))
+	// goji.Get("/show_channels", withSignedParams(new(model.DummyStruct), ShowChannels))
 	goji.Post("/call", withSignedParams(new(model.Call), PlaceCall))
 	goji.Post("/spy", withSignedParams(new(model.Call), PlaceSpy))
 	goji.Post("/queue_add", withSignedParams(new(model.PhoneCall), QueueAdd))

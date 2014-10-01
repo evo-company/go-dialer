@@ -44,6 +44,6 @@ func initDB() (db *bolt.DB) {
 
 func init() {
 	db = initDB()
-	PutChan = make(chan gami.Message)
-	DeleteChan = make(chan gami.Message)
+	PutChan = make(chan gami.Message, conf.MAX_CDR_NUMBER)
+	DeleteChan = make(chan gami.Message, conf.MAX_CDR_NUMBER)
 }

@@ -19,11 +19,12 @@ import (
 
 func CdrReader(wg *sync.WaitGroup, cdrChan chan<- gami.Message, finishChan <-chan struct{},
 	ticker *time.Ticker) {
+	glog.Infoln("Initiating CdrReader...")
 	wg.Add(1)
 	for {
 		select {
 		case <-finishChan:
-			glog.Warningln("Finishing CdrReader")
+			glog.Warningln("Finishing CdrReader...")
 			ticker.Stop()
 			wg.Done()
 			return
@@ -55,11 +56,12 @@ func CdrReader(wg *sync.WaitGroup, cdrChan chan<- gami.Message, finishChan <-cha
 
 func CdrSaver(wg *sync.WaitGroup, cdrChan <-chan gami.Message, finishChan <-chan struct{},
 	i int) {
+	glog.Infoln("Initiating CdrSaver...", strconv.Itoa(i))
 	wg.Add(1)
 	for {
 		select {
 		case <-finishChan:
-			glog.Warningln("Finishing CdrSaver", strconv.Itoa(i))
+			glog.Warningln("Finishing CdrSaver...", strconv.Itoa(i))
 			wg.Done()
 			return
 		case m := <-cdrChan:
@@ -77,11 +79,12 @@ func CdrSaver(wg *sync.WaitGroup, cdrChan <-chan gami.Message, finishChan <-chan
 }
 
 func DbHandler(wg *sync.WaitGroup, finishChan <-chan struct{}) {
+	glog.Infoln("Initiating DbHandler...")
 	wg.Add(1)
 	for {
 		select {
 		case <-finishChan:
-			glog.Warningln("Finishing DbHandler")
+			glog.Warningln("Finishing DbHandler...")
 			wg.Done()
 			return
 		case m := <-db.DeleteChan:
@@ -108,16 +111,17 @@ func DbHandler(wg *sync.WaitGroup, finishChan <-chan struct{}) {
 
 func QueueManager(wg *sync.WaitGroup, queueTransport <-chan chan gami.Message, finishChan <-chan struct{},
 	ticker *time.Ticker) {
+	glog.Infoln("Initiating QueueManager...")
 	wg.Add(1)
 	for {
 		select {
 		case <-finishChan:
-			glog.Warningln("Finishing QueueManager")
+			glog.Warningln("Finishing QueueManager...")
 			ticker.Stop()
 			wg.Done()
 			return
 		case <-ticker.C:
-			glog.Infoln("QueueManager starts to check...")
+			glog.Infoln("<<< MANAGING QUEUES...")
 			getInnerNumbers()
 			// Send queue status to AMI
 			if err := ami.QueueStatus(); err != nil {
@@ -152,10 +156,10 @@ func QueueManager(wg *sync.WaitGroup, queueTransport <-chan chan gami.Message, f
 							if staticQueue == queue || generalizedQueue == queue {
 								status = "available"
 							} else {
-								// _, err := ami.RemoveFromQueue(queue, countryCode, number)
-								// if err != nil {
-								// 	glog.Errorln(err, number)
-								// }
+								_, err := ami.RemoveFromQueue(queue, countryCode, number)
+								if err != nil {
+									glog.Errorln(err, number)
+								}
 							}
 						}
 						numbersState[number] = status
@@ -168,31 +172,6 @@ func QueueManager(wg *sync.WaitGroup, queueTransport <-chan chan gami.Message, f
 					glog.Errorln(err)
 				}
 			}
-		}
-	}
-}
-
-func CdrEventHandler(m gami.Message) {
-	innerPhoneNumber, opponentPhoneNumber, callType := GetPhoneDetails(m)
-	if callType != INNER_CALL && callType != -1 {
-		countryCode := ""
-		innerPhones := InnerPhonesNumber
-		for country, numbers := range innerPhones {
-			if _, ok := numbers[innerPhoneNumber]; ok {
-				countryCode = country
-				break
-			}
-		}
-		if countryCode != "" {
-			m["InnerPhoneNumber"] = innerPhoneNumber
-			m["OpponentPhoneNumber"] = opponentPhoneNumber
-			m["CallType"] = strconv.Itoa(callType)
-			m["CountryCode"] = countryCode
-			glog.Infoln("<<< READING MSG", m["UniqueID"])
-			glog.Infoln(m)
-			db.PutChan <- m
-		} else {
-			glog.Errorln("Unexisting numbers...", innerPhoneNumber, opponentPhoneNumber)
 		}
 	}
 }
