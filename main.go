@@ -1,6 +1,8 @@
 package main
 
 import (
+	_ "net/http/pprof"
+
 	"flag"
 	"net/http"
 	"runtime"
@@ -11,10 +13,10 @@ import (
 	"github.com/golang/glog"
 	"github.com/warik/gami"
 	"github.com/zenazn/goji"
-	"github.com/zenazn/goji/graceful"
 
 	"github.com/warik/dialer/ami"
 	"github.com/warik/dialer/conf"
+	"github.com/warik/dialer/db"
 	"github.com/warik/dialer/model"
 )
 
@@ -28,7 +30,10 @@ func main() {
 	// Lets get inner numbers first of all
 	getInnerNumbers()
 
-	wg := sync.WaitGroup{}
+	// Saving phone in and out calls
+	// pch := PhoneCallsHandler
+	// ami.GetAMI().RegisterHandler("Dial", &pch)
+	// ami.GetAMI().RegisterHandler("Bridge", &pch)
 
 	// CdrEventHandler reads cdrs, processes them and stores in db for further sending to
 	// corresponding portals
@@ -53,31 +58,34 @@ func main() {
 	}
 	ami.GetAMI().RegisterHandler("QueueStatusComplete", &qsch)
 
-	cdrChan := make(chan gami.Message, conf.MAX_CDR_NUMBER)
+	wg := sync.WaitGroup{}
+
 	finishChannels := []chan struct{}{make(chan struct{})}
-	go CdrReader(&wg, cdrChan, finishChannels[len(finishChannels)-1],
+	wg.Add(1)
+	go CdrReader(&wg, finishChannels[len(finishChannels)-1],
 		time.NewTicker(conf.CDR_READ_INTERVAL))
-
-	for i := 0; i < conf.HANDLERS_NUMBER; i++ {
-		finishChannels = append(finishChannels, make(chan struct{}))
-		go CdrSaver(&wg, cdrChan, finishChannels[len(finishChannels)-1], i)
-	}
-
-	finishChannels = append(finishChannels, make(chan struct{}))
-	go DbHandler(&wg, finishChannels[len(finishChannels)-1])
 
 	if conf.GetConf().Name == "prom" {
 		finishChannels = append(finishChannels, make(chan struct{}))
+		wg.Add(1)
 		go QueueManager(&wg, queueTransport, finishChannels[len(finishChannels)-1],
 			time.NewTicker(conf.QUEUE_RENEW_INTERVAL))
 	}
 
 	initRoutes()
-	graceful.PostHook(func() {
-		Clean(finishChannels, &wg)
-	})
 	goji.Serve()
+
+	// We need to switch ami first of all to avoid it sending any data
+	ami.GetAMI().Logoff()
+	// Send closing events to all goroutines
+	go func() {
+		for _, channel := range finishChannels {
+			close(channel)
+		}
+	}()
 	wg.Wait()
+	db.GetDB().Close()
+	glog.Flush()
 	// panic("Manual panic for checking goroutines")
 }
 
@@ -85,6 +93,7 @@ func initRoutes() {
 	// API for self
 	goji.Get("/", ImUp)
 	goji.Get("/ping", PingAsterisk)
+	goji.Get("/check-portals", CheckPortals)
 	goji.Get("/db-stats", DBStats)
 	goji.Get("/cdr/number", CdrNumber)
 	goji.Get("/cdr/get", withStructParams(new(model.Cdr), GetCdr))
@@ -92,7 +101,6 @@ func initRoutes() {
 
 	//API for prom
 	goji.Get("/show_inuse", withSignedParams(new(model.DummyStruct), ShowInuse))
-	// goji.Get("/show_channels", withSignedParams(new(model.DummyStruct), ShowChannels))
 	goji.Post("/call", withSignedParams(new(model.Call), PlaceCall))
 	goji.Post("/spy", withSignedParams(new(model.Call), PlaceSpy))
 	goji.Post("/queue_add", withSignedParams(new(model.PhoneCall), QueueAdd))

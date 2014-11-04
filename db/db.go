@@ -1,49 +1,55 @@
 package db
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
-	"github.com/boltdb/bolt"
-	"github.com/warik/gami"
+	"github.com/syndtr/goleveldb/leveldb"
 
 	"github.com/warik/dialer/conf"
 )
 
-var db *bolt.DB
-var dbStats bolt.Stats
-var PutChan chan gami.Message
-var DeleteChan chan gami.Message
+var db *leveldb.DB
 
-func GetDB() *bolt.DB {
+func GetDB() *leveldb.DB {
 	return db
 }
 
-func GetStats() bolt.Stats {
-	tStats := db.Stats()
-	diff := tStats.Sub(&dbStats)
-	dbStats = tStats
-	return diff
+func GetStats() (result string) {
+	t := []string{}
+	statNames := []string{"stats", "sstables", "blockpool", "cachedblock", "openedtables",
+		"alivesnaps", "aliveiters"}
+	for _, statName := range statNames {
+		statName = "leveldb." + statName
+		data, err := db.GetProperty(statName)
+		if err != nil {
+			panic(err)
+		}
+		t = append(t, fmt.Sprintf("%v\n%v\n%v", statName, data, strings.Repeat("=", 20)))
+	}
+	return strings.Join(t, "\n\n")
 }
 
-func initDB() (db *bolt.DB) {
+func GetCount() (result int) {
+	iter := db.NewIterator(nil, nil)
+	// result := 0
+	for iter.Next() {
+		result++
+	}
+	return
+}
+
+func initDB() (db *leveldb.DB) {
 	path, _ := filepath.Abs(filepath.Dir(os.Args[0]))
-	db, err := bolt.Open(filepath.Join(path, conf.CDR_DB_FILE), 0600, nil)
+	db, err := leveldb.OpenFile(filepath.Join(path, conf.CDR_DB_FILE), nil)
 	if err != nil {
 		panic(err)
 	}
-	if err := db.Update(func(tx *bolt.Tx) (err error) {
-		_, err = tx.CreateBucketIfNotExists([]byte(conf.BOLT_CDR_BUCKET))
-		return
-	}); err != nil {
-		panic(err)
-	}
-	dbStats = db.Stats()
 	return
 }
 
 func init() {
 	db = initDB()
-	PutChan = make(chan gami.Message, conf.MAX_CDR_NUMBER)
-	DeleteChan = make(chan gami.Message, conf.MAX_CDR_NUMBER)
 }

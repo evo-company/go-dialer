@@ -14,27 +14,36 @@ import (
 )
 
 const (
-	REQUEST_TIMEOUT       = 15
+	REQUEST_TIMEOUT       = 5
 	CDR_READ_INTERVAL     = 30 * time.Second
 	QUEUE_RENEW_INTERVAL  = 10 * time.Minute
 	REMOTE_ERROR_TEXT     = "Error on remote server, status code - %v"
-	CDR_DB_FILE           = "cdr_log.db"
+	CDR_DB_FILE           = "cdr_log_db"
 	MAX_CDR_NUMBER        = 50
+	CDR_SAVERS_COUNT      = 5
 	BOLT_CDR_BUCKET       = "CdrBucket"
 	AMI_RECONNECT_TIMEOUT = 5 * time.Second
-	HANDLERS_NUMBER       = 1
+	FOLDER_FOR_CALLS      = "/home/aursulenko"
 )
 
 var conf Configuration
 
-var PORTAL_MAP = map[string]string{
-	// "ua": "http://my.example.com:5000/",
-	"ua": "http://my.trunk.uaprom/",
-	"ru": "http://my.ru-trunk.uaprom/",
-	// "ua": "https://my.prom.ua/",
-	// "ru": "https://my.tiu.ru/",
-	"by": "https://my.deal.by/",
-	"kz": "https://my.satu.kz/",
+type PortalMap map[string]string
+
+var PORTAL_MAP = map[string]PortalMap{
+	"local": PortalMap{
+		"ua": "http://my.example.com:5000/",
+	},
+	"trunk": PortalMap{
+		"ua": "http://my.trunk.uaprom/",
+		"ru": "http://my.ru-trunk.uaprom/",
+	},
+	"prod": PortalMap{
+		"ua": "https://my.prom.ua/",
+		"ru": "https://my.tiu.ru/",
+		"by": "https://my.deal.by/",
+		"kz": "https://my.satu.kz/",
+	},
 }
 var ADMIN_PHONES = []string{"+380938677855", "+380637385529"}
 
@@ -44,10 +53,11 @@ type Configuration struct {
 	AsteriskHost, Api  string
 	AllowedRemoteAddrs []string
 	Agencies           map[string]model.CountrySettings
+	Target             string
 }
 
 func (c Configuration) GetApi(country string, apiKey string) string {
-	return PORTAL_MAP[country] + c.Api + apiKey
+	return PORTAL_MAP[conf.Target][country] + c.Api + apiKey
 }
 
 func initConf(confFile string) Configuration {

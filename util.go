@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -18,9 +17,7 @@ import (
 	"github.com/vmihailenco/signer"
 	"github.com/warik/gami"
 
-	"github.com/warik/dialer/ami"
 	"github.com/warik/dialer/conf"
-	"github.com/warik/dialer/db"
 	"github.com/warik/dialer/model"
 )
 
@@ -104,32 +101,34 @@ func GetActiveQueuesMap(activeQueuesChan <-chan gami.Message) (
 	return
 }
 
-func GetPhoneDetails(m gami.Message) (string, string, int) {
+func GetPhoneDetails(channel, destChannel, source, destination, callerId string) (string,
+	string, int) {
 	re, _ := regexp.Compile("^\\w+/(\\d{2,4}|\\d{4}\\w{2})\\D*-.+$")
-	in := re.FindStringSubmatch(m["Channel"])
-	out := re.FindStringSubmatch(m["DestinationChannel"])
+	in := re.FindStringSubmatch(channel)
+	out := re.FindStringSubmatch(destChannel)
+	re = nil
 	if in != nil && out != nil {
 		// If both phones are inner and same - its incoming call through queue
 		// If not - inner call
 		if in[1] == out[1] {
 			// If there is no any form of source - its hidden call
-			if m["Source"] == "" && m["CallerID"] == "" {
+			if source == "" && callerId == "" {
 				return out[1], "xxxx", INCOMING_CALL_HIDDEN
 			} else {
-				return out[1], m["Source"], INCOMING_CALL
+				return out[1], source, INCOMING_CALL
 			}
 		} else {
 			return "", "", INNER_CALL
 		}
 	}
-	if in != nil {
-		return in[1], m["Destination"], OUTGOING_CALL
+	if in != nil && len(destination) >= 4 {
+		return in[1], destination, OUTGOING_CALL
 	}
 	if out != nil {
-		if m["Source"] == "" && m["CallerID"] == "" {
+		if source == "" && callerId == "" {
 			return out[1], "xxxx", INCOMING_CALL_HIDDEN
 		} else {
-			return out[1], m["Source"], INCOMING_CALL
+			return out[1], source, INCOMING_CALL
 		}
 	} else {
 		// High chances that this is just dropped phone, so just ignore
@@ -137,8 +136,24 @@ func GetPhoneDetails(m gami.Message) (string, string, int) {
 	}
 }
 
-func WriteResponse(w http.ResponseWriter, resp gami.Message, statusFromResponse bool,
+func APIResponseWriter(resp model.Response, err error, w http.ResponseWriter) {
+	if err != nil {
+		glog.Errorln(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	} else {
+		glog.Info("<<< PORTAL RESPONSE", resp)
+		fmt.Fprint(w, resp)
+	}
+}
+
+func AMIResponseWriter(w http.ResponseWriter, resp gami.Message, err error, statusFromResponse bool,
 	dataKey string) {
+	if err != nil {
+		glog.Errorln(err)
+		fmt.Fprint(w, model.Response{"status": "error", "error": err})
+		return
+	}
+
 	if r, ok := resp["Response"]; ok && r == "Follows" {
 		glog.Infoln("<<< RESPONSE...")
 	} else {
@@ -160,7 +175,7 @@ func WriteResponse(w http.ResponseWriter, resp gami.Message, statusFromResponse 
 	fmt.Fprint(w, model.Response{"status": status, "response": response})
 }
 
-func UnsignData(i interface{}, d model.SignedInputData) error {
+func UnsignData(i interface{}, d model.SignedInputData) (err error) {
 	h := hmac.New(func() hash.Hash {
 		return sha1.New()
 	}, []byte(getKey(conf.GetConf().Agencies[d.Country].Secret)))
@@ -170,19 +185,13 @@ func UnsignData(i interface{}, d model.SignedInputData) error {
 	if !ok || len(signatureData) < 2 {
 		return errors.New("Bad signature")
 	}
-	return json.Unmarshal(dataString, &i)
-}
-
-func Clean(finishChannels []chan struct{}, wg *sync.WaitGroup) {
-	for _, channel := range finishChannels {
-		close(channel)
-	}
-	db.GetDB().Close()
-	ami.GetAMI().Logoff()
-	glog.Flush()
+	err = json.Unmarshal(dataString, &i)
+	dataString, signatureData = nil, nil
+	return
 }
 
 func SendRequest(m map[string]string, url, method, secret, companyId string) (string, error) {
+	glog.Infoln(fmt.Sprintf("Sending request to %v", url))
 	m["CompanyId"] = companyId
 	signedData, err := signData(m, secret)
 	if err != nil {
@@ -197,7 +206,6 @@ func SendRequest(m map[string]string, url, method, secret, companyId string) (st
 		query, _ := json.Marshal(data)
 		request.Get(url).Query(string(query))
 	}
-
 	resp, respBody, errs := request.Timeout(conf.REQUEST_TIMEOUT * time.Second).End()
 
 	if len(errs) != 0 {

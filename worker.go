@@ -3,12 +3,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/boltdb/bolt"
 	"github.com/golang/glog"
 	"github.com/warik/gami"
 
@@ -17,10 +16,50 @@ import (
 	"github.com/warik/dialer/db"
 )
 
-func CdrReader(wg *sync.WaitGroup, cdrChan chan<- gami.Message, finishChan <-chan struct{},
-	ticker *time.Ticker) {
+func saveCdr(mChan <-chan gami.Message) {
+	for len(mChan) > 0 {
+		m := <-mChan
+		settings := conf.GetConf().Agencies[m["CountryCode"]]
+		url := conf.GetConf().GetApi(m["CountryCode"], "save_phone_call")
+		_, err := SendRequest(m, url, "POST", settings.Secret, settings.CompanyId)
+		if err == nil {
+			glog.Infoln("<<< CDR SAVED", "|", m["UniqueID"])
+			if err := db.GetDB().Delete([]byte(m["UniqueID"]), nil); err != nil {
+				glog.Errorln("Error while deleting message - ", m["UniqueID"])
+			}
+		} else {
+			glog.Errorln("<<< ERROR WHILE SAVING", "|", m["UniqueID"], err)
+		}
+	}
+}
+
+func readCdrs(mChan chan gami.Message) {
+	iter := db.GetDB().NewIterator(nil, nil)
+	readedCdrNum := 0
+	for iter.Next() && readedCdrNum <= conf.MAX_CDR_NUMBER {
+		m := gami.Message{}
+		_ = json.Unmarshal(iter.Value(), &m)
+		mChan <- m
+		readedCdrNum++
+	}
+	for i := 0; i < min(readedCdrNum, conf.CDR_SAVERS_COUNT); i++ {
+		go saveCdr(mChan)
+	}
+	glog.Infoln(fmt.Sprintf("<<< READING | PROCESS: %d", readedCdrNum))
+	if readedCdrNum == conf.MAX_CDR_NUMBER {
+		conf.Alert("Overload with cdr")
+	}
+
+	iter.Release()
+	if err := iter.Error(); err != nil {
+		glog.Errorln("Problem, while reading from db", err)
+		conf.Alert("Problem, while reading from db")
+	}
+}
+
+func CdrReader(wg *sync.WaitGroup, finishChan <-chan struct{}, ticker *time.Ticker) {
 	glog.Infoln("Initiating CdrReader...")
-	wg.Add(1)
+	mChan := make(chan gami.Message, conf.MAX_CDR_NUMBER)
 	for {
 		select {
 		case <-finishChan:
@@ -29,82 +68,9 @@ func CdrReader(wg *sync.WaitGroup, cdrChan chan<- gami.Message, finishChan <-cha
 			wg.Done()
 			return
 		case <-ticker.C:
-			_ = db.GetDB().View(func(tx *bolt.Tx) error {
-				b := tx.Bucket([]byte(conf.BOLT_CDR_BUCKET))
-				totalCdrNum := b.Stats().KeyN
-				readedCdrNum := 0
-
-				if totalCdrNum >= conf.MAX_CDR_NUMBER {
-					conf.Alert(fmt.Sprintf("Too much cdrs - %s", strconv.Itoa(totalCdrNum)))
-				}
-
-				glog.Infoln(fmt.Sprintf("<<< READING. TOTAL-%s;PROCESS-%s ",
-					strconv.Itoa(totalCdrNum),
-					strconv.Itoa(min(totalCdrNum, conf.MAX_CDR_NUMBER))))
-				c := b.Cursor()
-				for k, v := c.First(); k != nil && readedCdrNum <= conf.MAX_CDR_NUMBER; k, v = c.Next() {
-					m := gami.Message{}
-					_ = json.Unmarshal(v, &m)
-					cdrChan <- m
-					readedCdrNum++
-				}
-				return nil
-			})
-		}
-	}
-}
-
-func CdrSaver(wg *sync.WaitGroup, cdrChan <-chan gami.Message, finishChan <-chan struct{},
-	i int) {
-	glog.Infoln("Initiating CdrSaver...", strconv.Itoa(i))
-	wg.Add(1)
-	for {
-		select {
-		case <-finishChan:
-			glog.Warningln("Finishing CdrSaver...", strconv.Itoa(i))
-			wg.Done()
-			return
-		case m := <-cdrChan:
-			glog.Infoln("<<< PROCESSING MSG", m["UniqueID"])
-
-			settings := conf.GetConf().Agencies[m["CountryCode"]]
-			url := conf.GetConf().GetApi(m["CountryCode"], "save_phone_call")
-			_, err := SendRequest(m, url, "POST", settings.Secret, settings.CompanyId)
-			if err == nil {
-				db.DeleteChan <- m
-				break
-			}
-		}
-	}
-}
-
-func DbHandler(wg *sync.WaitGroup, finishChan <-chan struct{}) {
-	glog.Infoln("Initiating DbHandler...")
-	wg.Add(1)
-	for {
-		select {
-		case <-finishChan:
-			glog.Warningln("Finishing DbHandler...")
-			wg.Done()
-			return
-		case m := <-db.DeleteChan:
-			_ = db.GetDB().Update(func(tx *bolt.Tx) error {
-				b := tx.Bucket([]byte(conf.BOLT_CDR_BUCKET))
-				if err := b.Delete([]byte(m["UniqueID"])); err != nil {
-					glog.Errorln("Error while deleting message - ", m["UniqueID"])
-				}
-				return nil
-			})
-		case m := <-db.PutChan:
-			_ = db.GetDB().Update(func(tx *bolt.Tx) error {
-				b := tx.Bucket([]byte(conf.BOLT_CDR_BUCKET))
-				value, _ := json.Marshal(m)
-				if err := b.Put([]byte(m["UniqueID"]), value); err != nil {
-					conf.Alert("Cannot add cdr to db")
-					panic(err)
-				}
-				return nil
-			})
+			getInnerNumbers()
+			go readCdrs(mChan)
+			glog.Flush()
 		}
 	}
 }
@@ -112,7 +78,6 @@ func DbHandler(wg *sync.WaitGroup, finishChan <-chan struct{}) {
 func QueueManager(wg *sync.WaitGroup, queueTransport <-chan chan gami.Message, finishChan <-chan struct{},
 	ticker *time.Ticker) {
 	glog.Infoln("Initiating QueueManager...")
-	wg.Add(1)
 	for {
 		select {
 		case <-finishChan:
@@ -122,7 +87,6 @@ func QueueManager(wg *sync.WaitGroup, queueTransport <-chan chan gami.Message, f
 			return
 		case <-ticker.C:
 			glog.Infoln("<<< MANAGING QUEUES...")
-			getInnerNumbers()
 			// Send queue status to AMI
 			if err := ami.QueueStatus(); err != nil {
 				glog.Errorln(err)
@@ -172,6 +136,7 @@ func QueueManager(wg *sync.WaitGroup, queueTransport <-chan chan gami.Message, f
 					glog.Errorln(err)
 				}
 			}
+			debug.FreeOSMemory()
 		}
 	}
 }
