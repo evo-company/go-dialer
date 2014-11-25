@@ -34,7 +34,7 @@ func GetStats() (result string) {
 
 func GetCount() (result int) {
 	iter := db.NewIterator(nil, nil)
-	// result := 0
+	defer iter.Release()
 	for iter.Next() {
 		result++
 	}
@@ -50,6 +50,10 @@ func initDB() (db *leveldb.DB) {
 	return
 }
 
-func init() {
+func OpenDB() {
 	db = initDB()
+}
+
+func init() {
+	OpenDB()
 }

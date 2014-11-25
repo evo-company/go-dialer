@@ -17,13 +17,13 @@ const (
 	REQUEST_TIMEOUT       = 5
 	CDR_READ_INTERVAL     = 30 * time.Second
 	QUEUE_RENEW_INTERVAL  = 10 * time.Minute
+	NUMBERS_LOAD_INTERVAL = 5 * time.Minute
 	REMOTE_ERROR_TEXT     = "Error on remote server, status code - %v"
 	CDR_DB_FILE           = "cdr_log_db"
 	MAX_CDR_NUMBER        = 50
 	CDR_SAVERS_COUNT      = 5
 	BOLT_CDR_BUCKET       = "CdrBucket"
 	AMI_RECONNECT_TIMEOUT = 5 * time.Second
-	FOLDER_FOR_CALLS      = "/home/aursulenko"
 )
 
 var conf Configuration
@@ -48,12 +48,12 @@ var PORTAL_MAP = map[string]PortalMap{
 var ADMIN_PHONES = []string{"+380938677855", "+380637385529"}
 
 type Configuration struct {
-	AMILogin, Secret   string
-	AMIPassword, Name  string
-	AsteriskHost, Api  string
-	AllowedRemoteAddrs []string
-	Agencies           map[string]model.CountrySettings
-	Target             string
+	AMILogin, Secret       string
+	AMIPassword, Name      string
+	AsteriskHost, Api      string
+	Target, FolderForCalls string
+	AllowedRemoteAddrs     []string
+	Agencies               map[string]model.CountrySettings
 }
 
 func (c Configuration) GetApi(country string, apiKey string) string {

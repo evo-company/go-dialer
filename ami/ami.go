@@ -23,6 +23,7 @@ func connectAndLogin(a *gami.Asterisk) {
 	messageAlreadySent := false
 	for {
 		if err := a.Start(); err != nil {
+			glog.Errorln(err)
 			glog.Warningln("Trying to reconnect and relogin...")
 			if !messageAlreadySent {
 				conf.Alert("Lost connection with asterisk")

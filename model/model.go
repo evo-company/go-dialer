@@ -9,6 +9,7 @@ import (
 )
 
 type Set map[string]struct{}
+type Dict map[string]string
 type Response map[string]interface{}
 
 func (r Response) String() string {
@@ -38,16 +39,16 @@ func (c Call) GetCallerID() string {
 }
 
 type PhoneCall struct {
-	CallingPhone string `param:"calling_phone"`
 	Country      string `param:"country" json:"country"`
+	CallingPhone string `param:"calling_phone"`
 	Id           string `param:"id"`
 	InnerNumber  string `param:"inner_number" json:"inner_number"`
 	ReviewHref   string `param:"review_href"`
 }
 
 type SignedInputData struct {
-	Data    string `param:"data"`
 	Country string `param:"country"`
+	Data    string `param:"data"`
 }
 
 type Cdr struct {

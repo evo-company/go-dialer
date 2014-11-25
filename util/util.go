@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"crypto/hmac"
@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -29,11 +30,33 @@ const (
 	INCOMING_CALL_HIDDEN
 )
 
-type Dict map[string]string
+type InnerPhones struct {
+	Map map[string]model.Set
+	*sync.RWMutex
+}
 
-var InnerPhonesNumber map[string]model.Set
+func (in *InnerPhones) LoadInnerNumbers() {
+	in.Lock()
+	defer in.Unlock()
 
-func min(a, b int) int {
+	in.Map = map[string]model.Set{}
+	for countryCode, settings := range conf.GetConf().Agencies {
+		url := conf.GetConf().GetApi(countryCode, "get_employees_inner_phone")
+		numbers, err := SendRequest(model.Dict{}, url, "GET", settings.Secret,
+			settings.CompanyId)
+		if err != nil {
+			glog.Errorln(err)
+			continue
+		}
+		in.Map[countryCode] = model.Set{}
+		for _, number := range strings.Split(numbers, ",") {
+			in.Map[countryCode][number] = struct{}{}
+		}
+	}
+	// glog.Infoln("<<< INNER NUMBERS", in.Map)
+}
+
+func Min(a, b int) int {
 	if a <= b {
 		return a
 	}
@@ -57,25 +80,6 @@ func signData(m map[string]string, secret string) (signedData string, err error)
 	}
 	signedData = string(signer.NewBase64Signer(h).Sign(data))
 	return
-}
-
-func getInnerNumbers() {
-	temp := map[string]model.Set{}
-	for countryCode, settings := range conf.GetConf().Agencies {
-		url := conf.GetConf().GetApi(countryCode, "get_employees_inner_phone")
-		numbers, err := SendRequest(Dict{}, url, "GET", settings.Secret,
-			settings.CompanyId)
-		if err != nil {
-			glog.Errorln(err)
-			continue
-		}
-		temp[countryCode] = model.Set{}
-		for _, number := range strings.Split(numbers, ",") {
-			temp[countryCode][number] = struct{}{}
-		}
-	}
-	InnerPhonesNumber = temp
-	glog.Infoln("<<< INNER NUMBERS", InnerPhonesNumber)
 }
 
 func GetActiveQueuesMap(activeQueuesChan <-chan gami.Message) (

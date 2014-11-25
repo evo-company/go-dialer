@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"runtime/debug"
+	// "runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -14,52 +14,36 @@ import (
 	"github.com/warik/dialer/ami"
 	"github.com/warik/dialer/conf"
 	"github.com/warik/dialer/db"
+	"github.com/warik/dialer/model"
+	"github.com/warik/dialer/util"
 )
 
-func saveCdr(mChan <-chan gami.Message) {
-	for len(mChan) > 0 {
-		m := <-mChan
-		settings := conf.GetConf().Agencies[m["CountryCode"]]
-		url := conf.GetConf().GetApi(m["CountryCode"], "save_phone_call")
-		_, err := SendRequest(m, url, "POST", settings.Secret, settings.CompanyId)
-		if err == nil {
-			glog.Infoln("<<< CDR SAVED", "|", m["UniqueID"])
-			if err := db.GetDB().Delete([]byte(m["UniqueID"]), nil); err != nil {
-				glog.Errorln("Error while deleting message - ", m["UniqueID"])
+func CdrSaver(wg *sync.WaitGroup, mChan <-chan gami.Message, finishChan <-chan struct{}) {
+	for {
+		select {
+		case <-finishChan:
+			glog.Warningln("Finishing CdrSaver...")
+			wg.Done()
+			return
+		case m := <-mChan:
+			settings := conf.GetConf().Agencies[m["CountryCode"]]
+			url := conf.GetConf().GetApi(m["CountryCode"], "save_phone_call")
+			_, err := util.SendRequest(m, url, "POST", settings.Secret, settings.CompanyId)
+			if err == nil {
+				glog.Infoln("<<< CDR SAVED", "|", m["UniqueID"])
+				if err := db.GetDB().Delete([]byte(m["UniqueID"]), nil); err != nil {
+					glog.Errorln("Error while deleting message - ", m["UniqueID"])
+				}
+			} else {
+				glog.Errorln("<<< ERROR WHILE SAVING", "|", m["UniqueID"], err)
 			}
-		} else {
-			glog.Errorln("<<< ERROR WHILE SAVING", "|", m["UniqueID"], err)
 		}
 	}
 }
 
-func readCdrs(mChan chan gami.Message) {
-	iter := db.GetDB().NewIterator(nil, nil)
-	readedCdrNum := 0
-	for iter.Next() && readedCdrNum <= conf.MAX_CDR_NUMBER {
-		m := gami.Message{}
-		_ = json.Unmarshal(iter.Value(), &m)
-		mChan <- m
-		readedCdrNum++
-	}
-	for i := 0; i < min(readedCdrNum, conf.CDR_SAVERS_COUNT); i++ {
-		go saveCdr(mChan)
-	}
-	glog.Infoln(fmt.Sprintf("<<< READING | PROCESS: %d", readedCdrNum))
-	if readedCdrNum == conf.MAX_CDR_NUMBER {
-		conf.Alert("Overload with cdr")
-	}
-
-	iter.Release()
-	if err := iter.Error(); err != nil {
-		glog.Errorln("Problem, while reading from db", err)
-		conf.Alert("Problem, while reading from db")
-	}
-}
-
-func CdrReader(wg *sync.WaitGroup, finishChan <-chan struct{}, ticker *time.Ticker) {
+func CdrReader(wg *sync.WaitGroup, mChan chan<- gami.Message, finishChan <-chan struct{},
+	ticker *time.Ticker) {
 	glog.Infoln("Initiating CdrReader...")
-	mChan := make(chan gami.Message, conf.MAX_CDR_NUMBER)
 	for {
 		select {
 		case <-finishChan:
@@ -68,9 +52,42 @@ func CdrReader(wg *sync.WaitGroup, finishChan <-chan struct{}, ticker *time.Tick
 			wg.Done()
 			return
 		case <-ticker.C:
-			getInnerNumbers()
-			go readCdrs(mChan)
+			iter := db.GetDB().NewIterator(nil, nil)
+			cdrsReaded := 0
+			for iter.Next() && cdrsReaded <= conf.MAX_CDR_NUMBER {
+				m := gami.Message{}
+				_ = json.Unmarshal(iter.Value(), &m)
+				mChan <- m
+				cdrsReaded++
+			}
+
+			glog.Infoln(fmt.Sprintf("<<< READING | PROCESS: %d", cdrsReaded))
+			if cdrsReaded == conf.MAX_CDR_NUMBER {
+				conf.Alert("Overload with cdr")
+			}
+
+			iter.Release()
+			if err := iter.Error(); err != nil {
+				glog.Errorln("Problem, while reading from db", err)
+				conf.Alert("Problem, while reading from db")
+			}
 			glog.Flush()
+		}
+	}
+}
+
+func NumbersLoader(wg *sync.WaitGroup, finishChan <-chan struct{}, ticker *time.Ticker) {
+	glog.Infoln("Initiating NumbersLoader...")
+	for {
+		select {
+		case <-finishChan:
+			glog.Warningln("Finishing NumbersLoader...")
+			ticker.Stop()
+			wg.Done()
+			return
+		case <-ticker.C:
+			InnerPhonesNumbers.LoadInnerNumbers()
+			// debug.FreeOSMemory()
 		}
 	}
 }
@@ -86,6 +103,7 @@ func QueueManager(wg *sync.WaitGroup, queueTransport <-chan chan gami.Message, f
 			wg.Done()
 			return
 		case <-ticker.C:
+			InnerPhonesNumbers.RLock()
 			glog.Infoln("<<< MANAGING QUEUES...")
 			// Send queue status to AMI
 			if err := ami.QueueStatus(); err != nil {
@@ -95,12 +113,12 @@ func QueueManager(wg *sync.WaitGroup, queueTransport <-chan chan gami.Message, f
 			// and wait for channel with active queues from asterisk
 			activeQueuesChan := <-queueTransport
 			// sort active queues for each number per country
-			queuesNumberMap := GetActiveQueuesMap(activeQueuesChan)
+			queuesNumberMap := util.GetActiveQueuesMap(activeQueuesChan)
 			for countryCode, settings := range conf.GetConf().Agencies {
 				tqs := queuesNumberMap[countryCode]
-				numbersState := make(Dict)
+				numbersState := make(model.Dict)
 				// For each inner number get its static queue from asterisk db
-				for number, _ := range InnerPhonesNumber[countryCode] {
+				for number, _ := range InnerPhonesNumbers.Map[countryCode] {
 					staticQueue, err := ami.GetStaticQueue(number)
 					if err != nil {
 						// if there is no static queue for number - some problem with it, skip
@@ -130,13 +148,14 @@ func QueueManager(wg *sync.WaitGroup, queueTransport <-chan chan gami.Message, f
 					}
 				}
 				url := conf.GetConf().GetApi(countryCode, "save_company_queues_states")
-				_, err := SendRequest(numbersState, url, "POST", settings.Secret,
+				_, err := util.SendRequest(numbersState, url, "POST", settings.Secret,
 					settings.CompanyId)
 				if err != nil {
 					glog.Errorln(err)
 				}
 			}
-			debug.FreeOSMemory()
+			// debug.FreeOSMemory()
+			InnerPhonesNumbers.RUnlock()
 		}
 	}
 }
