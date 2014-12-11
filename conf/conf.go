@@ -19,7 +19,7 @@ const (
 	QUEUE_RENEW_INTERVAL  = 10 * time.Minute
 	NUMBERS_LOAD_INTERVAL = 5 * time.Minute
 	REMOTE_ERROR_TEXT     = "Error on remote server, status code - %v"
-	CDR_DB_FILE           = "cdr_log_db"
+	CDR_DB_FILE           = "cdr_log.db"
 	MAX_CDR_NUMBER        = 50
 	CDR_SAVERS_COUNT      = 5
 	BOLT_CDR_BUCKET       = "CdrBucket"

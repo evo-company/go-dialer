@@ -42,8 +42,8 @@ func (in *InnerPhones) LoadInnerNumbers() {
 	in.Map = map[string]model.Set{}
 	for countryCode, settings := range conf.GetConf().Agencies {
 		url := conf.GetConf().GetApi(countryCode, "get_employees_inner_phone")
-		numbers, err := SendRequest(model.Dict{}, url, "GET", settings.Secret,
-			settings.CompanyId)
+		payload, _ := json.Marshal(model.Dict{"CompanyId": settings.CompanyId})
+		numbers, err := SendRequest(payload, url, "GET", settings.Secret, settings.CompanyId)
 		if err != nil {
 			glog.Errorln(err)
 			continue
@@ -69,16 +69,12 @@ func getKey(secret string) []byte {
 	return sh.Sum(nil)
 }
 
-func signData(m map[string]string, secret string) (signedData string, err error) {
+func signData(body []byte, secret string) (signedData string, err error) {
 	h := hmac.New(func() hash.Hash {
 		return sha1.New()
 	}, getKey(secret))
 
-	data, err := json.Marshal(m)
-	if err != nil {
-		return
-	}
-	signedData = string(signer.NewBase64Signer(h).Sign(data))
+	signedData = string(signer.NewBase64Signer(h).Sign(body))
 	return
 }
 
@@ -194,10 +190,9 @@ func UnsignData(i interface{}, d model.SignedInputData) (err error) {
 	return
 }
 
-func SendRequest(m map[string]string, url, method, secret, companyId string) (string, error) {
+func SendRequest(payload []byte, url, method, secret, companyId string) (string, error) {
 	glog.Infoln(fmt.Sprintf("Sending request to %v", url))
-	m["CompanyId"] = companyId
-	signedData, err := signData(m, secret)
+	signedData, err := signData(payload, secret)
 	if err != nil {
 		return "", err
 	}

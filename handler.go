@@ -40,11 +40,11 @@ func CdrEventHandler(m gami.Message) {
 		m["OpponentPhoneNumber"] = opponentPhoneNumber
 		m["CallType"] = strconv.Itoa(callType)
 		m["CountryCode"] = countryCode
+		m["CompanyId"] = conf.GetConf().Agencies[countryCode].CompanyId
 		glog.Infoln("<<< READING MSG", m["UniqueID"])
-		// glog.Infoln(m)
+		glog.Infoln(m)
 
-		value, _ := json.Marshal(m)
-		if err := db.GetDB().Put([]byte(m["UniqueID"]), value, nil); err != nil {
+		if err := db.GetDB().AddCDR(m); err != nil {
 			conf.Alert("Cannot add cdr to db")
 			panic(err)
 		}
@@ -68,17 +68,18 @@ func PhoneCallsHandler(m gami.Message) {
 // REST handlers
 // =============
 func DBStats(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, db.GetStats())
+	// fmt.Fprint(w, db.GetStats())
 }
 
 func CdrNumber(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, model.Response{"number_of_cdrs": strconv.Itoa(db.GetCount())})
+	fmt.Fprint(w, model.Response{"number_of_cdrs": strconv.Itoa(db.GetDB().GetCount())})
 }
 
 func DeleteCdr(p interface{}, w http.ResponseWriter, r *http.Request) {
 	cdr := (*p.(*model.Cdr))
-	err := db.GetDB().Delete([]byte(cdr.Id), nil)
+	err := db.GetDB().Delete(cdr.Id)
 	if err != nil {
+		glog.Errorln(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	} else {
 		fmt.Fprint(w, model.Response{"status": "success"})
@@ -87,61 +88,73 @@ func DeleteCdr(p interface{}, w http.ResponseWriter, r *http.Request) {
 
 func GetCdr(p interface{}, w http.ResponseWriter, r *http.Request) {
 	cdr := (*p.(*model.Cdr))
-	returnCdr, err := db.GetDB().Get([]byte(cdr.Id), nil)
+	returnCdr, err := db.GetDB().GetCDR(cdr.Id)
 	if err != nil {
+		glog.Errorln(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	} else {
-		fmt.Fprint(w, string(returnCdr))
+		fmt.Fprint(w, fmt.Sprintf("%#v", returnCdr))
 	}
 }
 
 func ManagerCallAfterHours(p interface{}, w http.ResponseWriter, r *http.Request) {
 	phoneCall := (*p.(*model.PhoneCall))
-	payload := model.Dict{"calling_phone": phoneCall.CallingPhone}
-	url := conf.GetConf().GetApi(phoneCall.Country, "manager_call_after_hours")
 	settings := conf.GetConf().Agencies[phoneCall.Country]
+	payload, _ := json.Marshal(model.Dict{
+		"calling_phone": phoneCall.CallingPhone,
+		"CompanyId":     settings.CompanyId,
+	})
+	url := conf.GetConf().GetApi(phoneCall.Country, "manager_call_after_hours")
 	resp, err := util.SendRequest(payload, url, "POST", settings.Secret, settings.CompanyId)
 	util.APIResponseWriter(model.Response{"status": resp}, err, w)
 }
 
 func ShowCallingReview(p interface{}, w http.ResponseWriter, r *http.Request) {
 	phoneCall := (*p.(*model.PhoneCall))
-	payload := model.Dict{
+	settings := conf.GetConf().Agencies[phoneCall.Country]
+	payload, _ := json.Marshal(model.Dict{
 		"inner_number": phoneCall.InnerNumber,
 		"review_href":  phoneCall.ReviewHref,
-	}
+		"CompanyId":    settings.CompanyId,
+	})
 	url := conf.GetConf().GetApi(phoneCall.Country, "show_calling_review_popup_to_manager")
-	settings := conf.GetConf().Agencies[phoneCall.Country]
 	resp, err := util.SendRequest(payload, url, "POST", settings.Secret, settings.CompanyId)
 	util.APIResponseWriter(model.Response{"status": resp}, err, w)
 }
 
 func ShowCallingPopup(p interface{}, w http.ResponseWriter, r *http.Request) {
 	phoneCall := (*p.(*model.PhoneCall))
-	payload := model.Dict{
+	settings := conf.GetConf().Agencies[phoneCall.Country]
+	payload, _ := json.Marshal(model.Dict{
 		"inner_number":  phoneCall.InnerNumber,
 		"calling_phone": phoneCall.CallingPhone,
-	}
+		"CompanyId":     settings.CompanyId,
+	})
 	url := conf.GetConf().GetApi(phoneCall.Country, "show_calling_popup_to_manager")
-	settings := conf.GetConf().Agencies[phoneCall.Country]
 	resp, err := util.SendRequest(payload, url, "POST", settings.Secret, settings.CompanyId)
 	util.APIResponseWriter(model.Response{"status": resp}, err, w)
 }
 
 func ManagerPhoneForCompany(p interface{}, w http.ResponseWriter, r *http.Request) {
 	phoneCall := (*p.(*model.PhoneCall))
-	payload := model.Dict{"id": phoneCall.Id}
-	url := conf.GetConf().GetApi(phoneCall.Country, "manager_phone_for_company")
 	settings := conf.GetConf().Agencies[phoneCall.Country]
+	payload, _ := json.Marshal(model.Dict{
+		"id":        phoneCall.Id,
+		"CompanyId": settings.CompanyId,
+	})
+	url := conf.GetConf().GetApi(phoneCall.Country, "manager_phone_for_company")
 	resp, err := util.SendRequest(payload, url, "GET", settings.Secret, settings.CompanyId)
 	util.APIResponseWriter(model.Response{"inner_number": resp}, err, w)
 }
 
 func ManagerPhone(p interface{}, w http.ResponseWriter, r *http.Request) {
 	phoneCall := (*p.(*model.PhoneCall))
-	payload := model.Dict{"calling_phone": phoneCall.CallingPhone}
-	url := conf.GetConf().GetApi(phoneCall.Country, "manager_phone")
 	settings := conf.GetConf().Agencies[phoneCall.Country]
+	payload, _ := json.Marshal(model.Dict{
+		"calling_phone": phoneCall.CallingPhone,
+		"CompanyId":     settings.CompanyId,
+	})
+	url := conf.GetConf().GetApi(phoneCall.Country, "manager_phone")
 	resp, err := util.SendRequest(payload, url, "GET", settings.Secret, settings.CompanyId)
 	util.APIResponseWriter(model.Response{"inner_number": resp}, err, w)
 }
@@ -194,7 +207,11 @@ func PingAsterisk(w http.ResponseWriter, r *http.Request) {
 func CheckPortals(w http.ResponseWriter, r *http.Request) {
 	for country, settings := range conf.GetConf().Agencies {
 		url := conf.GetConf().GetApi(country, "manager_phone")
-		if _, err := util.SendRequest(model.Dict{"calling_phone": "6916"}, url, "GET", settings.Secret,
+		payload, _ := json.Marshal(model.Dict{
+			"calling_phone": "6916",
+			"CompanyId":     settings.CompanyId,
+		})
+		if _, err := util.SendRequest(payload, url, "GET", settings.Secret,
 			settings.CompanyId); err != nil {
 			fmt.Fprint(w, model.Response{"country": country, "error": err.Error()})
 		} else {

@@ -24,6 +24,8 @@ import (
 var InnerPhonesNumbers util.InnerPhones
 
 var savePhoneCalls = flag.Bool("save_calls", false, "Set true to save phone calls")
+var manageQueues = flag.Bool("manage_queues", false,
+	"Set true to enable asterisk queue management")
 
 func init() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
@@ -39,7 +41,6 @@ func main() {
 	// Saving phone in and out calls
 	if *savePhoneCalls {
 		pch := PhoneCallsHandler
-		ami.GetAMI().RegisterHandler("Dial", &pch)
 		ami.GetAMI().RegisterHandler("Bridge", &pch)
 	}
 
@@ -66,7 +67,7 @@ func main() {
 	}
 	ami.GetAMI().RegisterHandler("QueueStatusComplete", &qsch)
 
-	mChan := make(chan gami.Message, conf.MAX_CDR_NUMBER)
+	mChan := make(chan db.CDR, conf.MAX_CDR_NUMBER)
 	wg := sync.WaitGroup{}
 
 	finishChannels := []chan struct{}{make(chan struct{})}
@@ -85,7 +86,7 @@ func main() {
 	go NumbersLoader(&wg, finishChannels[len(finishChannels)-1],
 		time.NewTicker(conf.NUMBERS_LOAD_INTERVAL))
 
-	if conf.GetConf().Name == "prom" {
+	if *manageQueues {
 		finishChannels = append(finishChannels, make(chan struct{}))
 		wg.Add(1)
 		go QueueManager(&wg, queueTransport, finishChannels[len(finishChannels)-1],
@@ -103,9 +104,7 @@ func main() {
 	}
 
 	wg.Wait()
-	db.GetDB().Close()
 	glog.Flush()
-	// panic("Manual panic for checking goroutines")
 }
 
 func initRoutes() {
@@ -185,6 +184,7 @@ func withStructParams(i interface{}, h func(interface{}, http.ResponseWriter,
 	*http.Request)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := model.GetStructFromParams(r, i); err != nil {
+			glog.Errorln(err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
