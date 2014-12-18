@@ -1,10 +1,12 @@
 package db
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 
+	"github.com/golang/glog"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 
@@ -96,10 +98,22 @@ func (db *DBWrapper) GetCount() (result int) {
 	return
 }
 
-func (db *DBWrapper) SelectCDRs(limit int) (*sqlx.Rows, error) {
+func (db *DBWrapper) SelectCDRs(limit int) (cdrs []CDR) {
 	db.Lock()
 	defer db.Unlock()
-	return db.Queryx("SELECT * FROM cdr limit $1", limit)
+	rows, _ := db.Queryx("SELECT * FROM cdr limit $1", limit)
+	cdrs = []CDR{}
+	for rows.Next() {
+		cdr := CDR{}
+		err := rows.StructScan(&cdr)
+		if err != nil {
+			glog.Errorln(err)
+			conf.Alert(fmt.Sprintf("Cannot read from db | %s", err))
+		} else {
+			cdrs = append(cdrs, cdr)
+		}
+	}
+	return
 }
 
 func GetDB() *DBWrapper {

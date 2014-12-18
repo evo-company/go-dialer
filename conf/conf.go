@@ -54,6 +54,7 @@ type Configuration struct {
 	Target, FolderForCalls string
 	AllowedRemoteAddrs     []string
 	Agencies               map[string]model.CountrySettings
+	TimeZone               int
 }
 
 func (c Configuration) GetApi(country string, apiKey string) string {

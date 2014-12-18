@@ -16,33 +16,30 @@ import (
 	"github.com/warik/dialer/util"
 )
 
+var callsCache = util.NewSafeCallsCache()
+
 // ============
 // AMI handlers
 // ============
 func CdrEventHandler(m gami.Message) {
-	InnerPhonesNumbers.RLock()
-	defer InnerPhonesNumbers.RUnlock()
 	innerPhoneNumber, opponentPhoneNumber, callType := util.GetPhoneDetails(m["Channel"],
 		m["DestinationChannel"], m["Source"], m["Destination"], m["CallerID"])
 	if callType != util.INNER_CALL && callType != -1 {
-		countryCode := ""
-		for country, numbers := range InnerPhonesNumbers.Map {
-			if _, ok := numbers[innerPhoneNumber]; ok {
-				countryCode = country
-				break
-			}
-		}
+		countryCode := util.GetCountryByInnerPhone(innerPhoneNumber)
 		if countryCode == "" {
 			glog.Errorln("Unexisting numbers...", innerPhoneNumber, opponentPhoneNumber)
 			return
 		}
+		// We may receive time from asterisk with time zone offset
+		// but for correct processing of it on portal side we need to store it in raw GMT
+		m["StartTime"] = util.ConvertTime(m["StartTime"], countryCode)
 		m["InnerPhoneNumber"] = innerPhoneNumber
 		m["OpponentPhoneNumber"] = opponentPhoneNumber
 		m["CallType"] = strconv.Itoa(callType)
 		m["CountryCode"] = countryCode
 		m["CompanyId"] = conf.GetConf().Agencies[countryCode].CompanyId
 		glog.Infoln("<<< READING MSG", m["UniqueID"])
-		glog.Infoln(m)
+		// glog.Infoln(m)
 
 		if err := db.GetDB().AddCDR(m); err != nil {
 			conf.Alert("Cannot add cdr to db")
@@ -52,15 +49,37 @@ func CdrEventHandler(m gami.Message) {
 }
 
 func PhoneCallsHandler(m gami.Message) {
-	suffix := ""
-	if m["Event"] == "Bridge" {
-		suffix = "1"
+	uniqueId := m["Uniqueid1"]
+	callsCache.Lock()
+	defer callsCache.Unlock()
+	if _, ok := callsCache.Map[uniqueId]; ok {
+		return
 	}
-	channel := m["Channel"+suffix]
-	fileName := fmt.Sprintf("%s/%s-%s.wav", conf.GetConf().FolderForCalls, conf.GetConf().Name,
-		m["Uniqueid"+suffix])
-	if _, err := ami.SendMixMonitor(channel, fileName); err != nil {
-		glog.Errorln(err)
+	callsCache.Map[uniqueId] = struct{}{}
+
+	// If Channel2 field has inner number then its incoming call and we need to show popup
+	// t := util.PHONE_RE.FindStringSubmatch(m["Channel2"])
+	// if t != nil {
+	// 	innerPhoneNumber := t[1]
+	// 	country := util.GetCountryByInnerPhone(innerPhoneNumber)
+	// 	opponentPhoneNumber := m["CallerID1"]
+	// 	if country == "" {
+	// 		glog.Errorln("Unexisting numbers...", innerPhoneNumber, opponentPhoneNumber)
+	// 		return
+	// 	}
+	// 	glog.Infoln(fmt.Sprintf("Showwing popup to: %s, %s", innerPhoneNumber, country))
+	// 	if err := util.ShowCallingPopup(innerPhoneNumber, opponentPhoneNumber,
+	// 		country); err != nil {
+	// 		glog.Errorln(err)
+	// 	}
+	// }
+
+	if *savePhoneCalls {
+		fileName := fmt.Sprintf("%s/%s-%s.wav", conf.GetConf().FolderForCalls, conf.GetConf().Name,
+			uniqueId)
+		if _, err := ami.SendMixMonitor(m["Channel1"], fileName); err != nil {
+			glog.Errorln(err)
+		}
 	}
 }
 

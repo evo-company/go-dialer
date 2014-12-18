@@ -23,12 +23,16 @@ import (
 )
 
 const (
+	TIME_FORMAT   = "2006-01-02 15:04:05"
 	INCOMING_CALL = iota
 	OUTGOING_CALL
 	INNER_CALL
 	UNKNOWN_CALL
 	INCOMING_CALL_HIDDEN
 )
+
+var PHONE_RE *regexp.Regexp
+var InnerPhonesNumbers InnerPhones
 
 type InnerPhones struct {
 	Map map[string]model.Set
@@ -53,7 +57,15 @@ func (in *InnerPhones) LoadInnerNumbers() {
 			in.Map[countryCode][number] = struct{}{}
 		}
 	}
-	// glog.Infoln("<<< INNER NUMBERS", in.Map)
+}
+
+type SafeCallsCache struct {
+	Map map[string]struct{}
+	*sync.RWMutex
+}
+
+func NewSafeCallsCache() SafeCallsCache {
+	return SafeCallsCache{map[string]struct{}{}, new(sync.RWMutex)}
 }
 
 func Min(a, b int) int {
@@ -76,6 +88,16 @@ func signData(body []byte, secret string) (signedData string, err error) {
 
 	signedData = string(signer.NewBase64Signer(h).Sign(body))
 	return
+}
+
+func ConvertTime(t, country string) string {
+	tt, err := time.Parse(TIME_FORMAT, t)
+	if err != nil {
+		glog.Errorln(err)
+		return ""
+	}
+	timeZoneShift := time.Duration(-conf.GetConf().TimeZone) * time.Hour
+	return tt.Add(timeZoneShift).Format(TIME_FORMAT)
 }
 
 func GetActiveQueuesMap(activeQueuesChan <-chan gami.Message) (
@@ -101,12 +123,34 @@ func GetActiveQueuesMap(activeQueuesChan <-chan gami.Message) (
 	return
 }
 
+func ShowCallingPopup(innerPhoneNumber, callingPhone, country string) error {
+	settings := conf.GetConf().Agencies[country]
+	payload, _ := json.Marshal(model.Dict{
+		"inner_number":  innerPhoneNumber,
+		"calling_phone": callingPhone,
+		"CompanyId":     settings.CompanyId,
+	})
+	url := conf.GetConf().GetApi(country, "show_calling_popup_to_manager")
+	_, err := SendRequest(payload, url, "POST", settings.Secret, settings.CompanyId)
+	return err
+}
+
+func GetCountryByInnerPhone(innerPhoneNumber string) (countryCode string) {
+	InnerPhonesNumbers.RLock()
+	defer InnerPhonesNumbers.RUnlock()
+	for country, numbers := range InnerPhonesNumbers.Map {
+		if _, ok := numbers[innerPhoneNumber]; ok {
+			countryCode = country
+			break
+		}
+	}
+	return
+}
+
 func GetPhoneDetails(channel, destChannel, source, destination, callerId string) (string,
 	string, int) {
-	re, _ := regexp.Compile("^\\w+/(\\d{2,4}|\\d{4}\\w{2})\\D*-.+$")
-	in := re.FindStringSubmatch(channel)
-	out := re.FindStringSubmatch(destChannel)
-	re = nil
+	in := PHONE_RE.FindStringSubmatch(channel)
+	out := PHONE_RE.FindStringSubmatch(destChannel)
 	if in != nil && out != nil {
 		// If both phones are inner and same - its incoming call through queue
 		// If not - inner call
@@ -216,4 +260,11 @@ func SendRequest(payload []byte, url, method, secret, companyId string) (string,
 	}
 
 	return respBody, nil
+}
+
+func init() {
+	PHONE_RE, _ = regexp.Compile("^\\w+/(\\d{2,4}|\\d{4}\\w{2})\\D*-.+$")
+
+	InnerPhonesNumbers = InnerPhones{nil, new(sync.RWMutex)}
+	InnerPhonesNumbers.LoadInnerNumbers()
 }

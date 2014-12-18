@@ -21,8 +21,6 @@ import (
 	"github.com/warik/dialer/util"
 )
 
-var InnerPhonesNumbers util.InnerPhones
-
 var savePhoneCalls = flag.Bool("save_calls", false, "Set true to save phone calls")
 var manageQueues = flag.Bool("manage_queues", false,
 	"Set true to enable asterisk queue management")
@@ -34,15 +32,9 @@ func init() {
 func main() {
 	flag.Parse()
 
-	// Lets get inner numbers first of all
-	InnerPhonesNumbers = util.InnerPhones{nil, new(sync.RWMutex)}
-	InnerPhonesNumbers.LoadInnerNumbers()
-
-	// Saving phone in and out calls
-	if *savePhoneCalls {
-		pch := PhoneCallsHandler
-		ami.GetAMI().RegisterHandler("Bridge", &pch)
-	}
+	// Saving in and out calls and showing popups
+	pch := PhoneCallsHandler
+	ami.GetAMI().RegisterHandler("Bridge", &pch)
 
 	// CdrEventHandler reads cdrs, processes them and stores in db for further sending to
 	// corresponding portals

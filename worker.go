@@ -52,24 +52,15 @@ func CdrReader(wg *sync.WaitGroup, mChan chan<- db.CDR, finishChan <-chan struct
 			wg.Done()
 			return
 		case <-ticker.C:
-			cdrsReaded := 0
-			cdr := db.CDR{}
-			rows, _ := db.GetDB().SelectCDRs(conf.MAX_CDR_NUMBER)
-
-			for rows.Next() {
-				err := rows.StructScan(&cdr)
-				if err != nil {
-					glog.Errorln(err)
-					conf.Alert(fmt.Sprintf("Cannot read from db | %s", err))
-				} else {
-					mChan <- cdr
-					cdrsReaded++
-				}
+			cdrs := db.GetDB().SelectCDRs(conf.MAX_CDR_NUMBER)
+			for _, cdr := range cdrs {
+				mChan <- cdr
 			}
 
+			cdrsReaded := len(cdrs)
 			glog.Infoln(fmt.Sprintf("<<< READING | PROCESS: %d", cdrsReaded))
 			if cdrsReaded == conf.MAX_CDR_NUMBER {
-				conf.Alert("Overload with cdr")
+				conf.Alert(fmt.Sprintf("Overload with cdr, %d", db.GetDB().GetCount()))
 			}
 
 			glog.Flush()
@@ -87,7 +78,7 @@ func NumbersLoader(wg *sync.WaitGroup, finishChan <-chan struct{}, ticker *time.
 			wg.Done()
 			return
 		case <-ticker.C:
-			InnerPhonesNumbers.LoadInnerNumbers()
+			util.InnerPhonesNumbers.LoadInnerNumbers()
 		}
 	}
 }
@@ -103,7 +94,7 @@ func QueueManager(wg *sync.WaitGroup, queueTransport <-chan chan gami.Message, f
 			wg.Done()
 			return
 		case <-ticker.C:
-			InnerPhonesNumbers.RLock()
+			util.InnerPhonesNumbers.RLock()
 			glog.Infoln("<<< MANAGING QUEUES...")
 			// Send queue status to AMI
 			if err := ami.QueueStatus(); err != nil {
@@ -118,7 +109,7 @@ func QueueManager(wg *sync.WaitGroup, queueTransport <-chan chan gami.Message, f
 				tqs := queuesNumberMap[countryCode]
 				numbersState := make(model.Dict)
 				// For each inner number get its static queue from asterisk db
-				for number, _ := range InnerPhonesNumbers.Map[countryCode] {
+				for number, _ := range util.InnerPhonesNumbers.Map[countryCode] {
 					staticQueue, err := ami.GetStaticQueue(number)
 					if err != nil {
 						// if there is no static queue for number - some problem with it, skip
@@ -155,7 +146,7 @@ func QueueManager(wg *sync.WaitGroup, queueTransport <-chan chan gami.Message, f
 					glog.Errorln(err)
 				}
 			}
-			InnerPhonesNumbers.RUnlock()
+			util.InnerPhonesNumbers.RUnlock()
 		}
 	}
 }
