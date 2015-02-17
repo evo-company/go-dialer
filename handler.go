@@ -39,7 +39,7 @@ func CdrEventHandler(m gami.Message) {
 		m["CountryCode"] = countryCode
 		m["CompanyId"] = conf.GetConf().Agencies[countryCode].CompanyId
 		glog.Infoln("<<< READING MSG", m["UniqueID"])
-		// glog.Infoln(m)
+		glog.Infoln(m)
 
 		if err := db.GetDB().AddCDR(m); err != nil {
 			conf.Alert("Cannot add cdr to db")
@@ -67,7 +67,7 @@ func PhoneCallsHandler(m gami.Message) {
 	// 		glog.Errorln("Unexisting numbers...", innerPhoneNumber, opponentPhoneNumber)
 	// 		return
 	// 	}
-	// 	glog.Infoln(fmt.Sprintf("Showwing popup to: %s, %s", innerPhoneNumber, country))
+	// 	glog.Infoln(fmt.Sprintf("Showing popup to: %s, %s", innerPhoneNumber, country))
 	// 	if err := util.ShowCallingPopup(innerPhoneNumber, opponentPhoneNumber,
 	// 		country); err != nil {
 	// 		glog.Errorln(err)
