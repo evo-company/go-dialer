@@ -18,8 +18,8 @@ import (
 	"github.com/vmihailenco/signer"
 	"github.com/warik/gami"
 
-	"github.com/warik/dialer/conf"
-	"github.com/warik/dialer/model"
+	"github.com/warik/go-dialer/conf"
+	"github.com/warik/go-dialer/model"
 )
 
 const (
@@ -35,7 +35,8 @@ var PHONE_RE *regexp.Regexp
 var InnerPhonesNumbers InnerPhones
 
 type InnerPhones struct {
-	Map map[string]model.Set
+	DuplicateNumbers model.Set
+	UniqueNumbersMap model.Dict
 	*sync.RWMutex
 }
 
@@ -43,7 +44,7 @@ func (in *InnerPhones) LoadInnerNumbers() {
 	in.Lock()
 	defer in.Unlock()
 
-	in.Map = map[string]model.Set{}
+	in.UniqueNumbersMap = model.Dict{}
 	for countryCode, settings := range conf.GetConf().Agencies {
 		url := conf.GetConf().GetApi(countryCode, "get_employees_inner_phone")
 		payload, _ := json.Marshal(model.Dict{"CompanyId": settings.CompanyId})
@@ -52,11 +53,16 @@ func (in *InnerPhones) LoadInnerNumbers() {
 			glog.Errorln(err)
 			continue
 		}
-		in.Map[countryCode] = model.Set{}
 		for _, number := range strings.Split(numbers, ",") {
-			in.Map[countryCode][number] = struct{}{}
+			if _, ok := in.UniqueNumbersMap[number]; ok {
+				in.DuplicateNumbers[number] = struct{}{}
+				delete(in.UniqueNumbersMap, number)
+			} else {
+				in.UniqueNumbersMap[number] = countryCode
+			}
 		}
 	}
+	glog.Infoln(in)
 }
 
 type SafeCallsCache struct {
@@ -90,7 +96,7 @@ func signData(body []byte, secret string) (signedData string, err error) {
 	return
 }
 
-func ConvertTime(t, country string) string {
+func ConvertTime(t string) string {
 	tt, err := time.Parse(TIME_FORMAT, t)
 	if err != nil {
 		glog.Errorln(err)
@@ -101,8 +107,8 @@ func ConvertTime(t, country string) string {
 }
 
 func GetActiveQueuesMap(activeQueuesChan <-chan gami.Message) (
-	queuesNumberMap map[string]map[string][]string) {
-	queuesNumberMap = make(map[string]map[string][]string)
+	queuesNumberMap map[string][]string) {
+	queuesNumberMap = make(map[string][]string)
 	for len(activeQueuesChan) > 0 {
 		qm := <-activeQueuesChan
 		queue, number, country := qm["Queue"], qm["Name"][6:10], qm["Name"][10:12]
@@ -110,14 +116,11 @@ func GetActiveQueuesMap(activeQueuesChan <-chan gami.Message) (
 		if country != "ua" && country != "ru" {
 			continue
 		}
-		if _, ok := queuesNumberMap[country]; !ok {
-			queuesNumberMap[country] = make(map[string][]string)
-		}
-		activeQueues, ok := queuesNumberMap[country][number]
+		activeQueues, ok := queuesNumberMap[number]
 		if !ok {
-			queuesNumberMap[country][number] = []string{queue}
+			queuesNumberMap[number] = []string{queue}
 		} else {
-			queuesNumberMap[country][number] = append(activeQueues, queue)
+			queuesNumberMap[number] = append(activeQueues, queue)
 		}
 	}
 	return
@@ -135,14 +138,27 @@ func ShowCallingPopup(innerPhoneNumber, callingPhone, country string) error {
 	return err
 }
 
-func GetCountryByInnerPhone(innerPhoneNumber string) (countryCode string) {
+func GetCountryByPhones(innerPhoneNumber, opponentPhoneNumber string) (countryCode string) {
 	InnerPhonesNumbers.RLock()
 	defer InnerPhonesNumbers.RUnlock()
-	for country, numbers := range InnerPhonesNumbers.Map {
-		if _, ok := numbers[innerPhoneNumber]; ok {
-			countryCode = country
-			break
+
+//	If inner number is same for more than one portal it will be in separate structure
+//	And that means that we need to guess portal country by opponent number
+//	In other case just return country from map
+	if _, ok := InnerPhonesNumbers.DuplicateNumbers[innerPhoneNumber]; ok {
+		outerNumber := strings.TrimPrefix(opponentPhoneNumber, "+")
+		if outerNumber[:3] == "380" || (outerNumber[:1] == "0" && len(outerNumber) == 10) {
+			countryCode = "ua"
+		} else if outerNumber[:2] == "77" {
+			countryCode = "kz"
+		} else if outerNumber[:2] == "80" || outerNumber[:3] == "375" {
+			countryCode = "by"
+		} else if (strings.Contains("78", outerNumber[:1]) &&
+			strings.Contains("3489", outerNumber[1:2])) {
+			countryCode = "ru"
 		}
+	} else {
+		countryCode = InnerPhonesNumbers.UniqueNumbersMap[innerPhoneNumber]
 	}
 	return
 }
@@ -265,6 +281,6 @@ func SendRequest(payload []byte, url, method, secret, companyId string) (string,
 func init() {
 	PHONE_RE, _ = regexp.Compile("^\\w+/(\\d{2,4}|\\d{4}\\w{2})\\D*-.+$")
 
-	InnerPhonesNumbers = InnerPhones{nil, new(sync.RWMutex)}
+	InnerPhonesNumbers = InnerPhones{nil, nil, new(sync.RWMutex)}
 	InnerPhonesNumbers.LoadInnerNumbers()
 }

@@ -10,7 +10,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/warik/dialer/conf"
+	"github.com/warik/go-dialer/conf"
 )
 
 const (

@@ -9,11 +9,11 @@ import (
 	"github.com/golang/glog"
 	"github.com/warik/gami"
 
-	"github.com/warik/dialer/ami"
-	"github.com/warik/dialer/conf"
-	"github.com/warik/dialer/db"
-	"github.com/warik/dialer/model"
-	"github.com/warik/dialer/util"
+	"github.com/warik/go-dialer/ami"
+	"github.com/warik/go-dialer/conf"
+	"github.com/warik/go-dialer/db"
+	"github.com/warik/go-dialer/model"
+	"github.com/warik/go-dialer/util"
 )
 
 var callsCache = util.NewSafeCallsCache()
@@ -25,14 +25,14 @@ func CdrEventHandler(m gami.Message) {
 	innerPhoneNumber, opponentPhoneNumber, callType := util.GetPhoneDetails(m["Channel"],
 		m["DestinationChannel"], m["Source"], m["Destination"], m["CallerID"])
 	if callType != util.INNER_CALL && callType != -1 {
-		countryCode := util.GetCountryByInnerPhone(innerPhoneNumber)
+		countryCode := util.GetCountryByPhones(innerPhoneNumber, opponentPhoneNumber)
 		if countryCode == "" {
 			glog.Errorln("Unexisting numbers...", innerPhoneNumber, opponentPhoneNumber)
 			return
 		}
 		// We may receive time from asterisk with time zone offset
 		// but for correct processing of it on portal side we need to store it in raw GMT
-		m["StartTime"] = util.ConvertTime(m["StartTime"], countryCode)
+		m["StartTime"] = util.ConvertTime(m["StartTime"])
 		m["InnerPhoneNumber"] = innerPhoneNumber
 		m["OpponentPhoneNumber"] = opponentPhoneNumber
 		m["CallType"] = strconv.Itoa(callType)
@@ -74,7 +74,7 @@ func PhoneCallsHandler(m gami.Message) {
 	// 	}
 	// }
 
-	if *savePhoneCalls {
+	if conf.GetConf().SavePhoneCalls {
 		fileName := fmt.Sprintf("%s/%s-%s.wav", conf.GetConf().FolderForCalls, conf.GetConf().Name,
 			uniqueId)
 		if _, err := ami.SendMixMonitor(m["Channel1"], fileName); err != nil {

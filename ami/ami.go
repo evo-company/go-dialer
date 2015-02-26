@@ -9,8 +9,8 @@ import (
 	"github.com/golang/glog"
 	"github.com/warik/gami"
 
-	"github.com/warik/dialer/conf"
-	"github.com/warik/dialer/model"
+	"github.com/warik/go-dialer/conf"
+	"github.com/warik/go-dialer/model"
 )
 
 var ami *gami.Asterisk

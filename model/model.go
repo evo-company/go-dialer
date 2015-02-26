@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/zenazn/goji/param"
+	"github.com/goji/param"
 )
 
 type Set map[string]struct{}

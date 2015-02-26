@@ -14,24 +14,19 @@ import (
 	"github.com/warik/gami"
 	"github.com/zenazn/goji"
 
-	"github.com/warik/dialer/ami"
-	"github.com/warik/dialer/conf"
-	"github.com/warik/dialer/db"
-	"github.com/warik/dialer/model"
-	"github.com/warik/dialer/util"
+	"github.com/warik/go-dialer/ami"
+	"github.com/warik/go-dialer/conf"
+	"github.com/warik/go-dialer/db"
+	"github.com/warik/go-dialer/model"
+	"github.com/warik/go-dialer/util"
 )
 
-var savePhoneCalls = flag.Bool("save_calls", false, "Set true to save phone calls")
-var manageQueues = flag.Bool("manage_queues", false,
-	"Set true to enable asterisk queue management")
-
 func init() {
+	flag.Parse()
 	runtime.GOMAXPROCS(runtime.NumCPU())
 }
 
 func main() {
-	flag.Parse()
-
 	// Saving in and out calls and showing popups
 	pch := PhoneCallsHandler
 	ami.GetAMI().RegisterHandler("Bridge", &pch)
@@ -78,7 +73,7 @@ func main() {
 	go NumbersLoader(&wg, finishChannels[len(finishChannels)-1],
 		time.NewTicker(conf.NUMBERS_LOAD_INTERVAL))
 
-	if *manageQueues {
+	if conf.GetConf().ManageQueues {
 		finishChannels = append(finishChannels, make(chan struct{}))
 		wg.Add(1)
 		go QueueManager(&wg, queueTransport, finishChannels[len(finishChannels)-1],
