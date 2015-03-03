@@ -41,7 +41,8 @@ func CdrEventHandler(m gami.Message) {
 		glog.Infoln("<<< READING MSG", m["UniqueID"])
 		glog.Infoln(m)
 
-		if err := db.GetDB().AddCDR(m); err != nil {
+		res, err := db.GetDB().AddCDR(m)
+		if count, _ := res.RowsAffected(); err != nil || count != 1 {
 			conf.Alert("Cannot add cdr to db")
 			panic(err)
 		}
@@ -96,10 +97,12 @@ func CdrNumber(w http.ResponseWriter, r *http.Request) {
 
 func DeleteCdr(p interface{}, w http.ResponseWriter, r *http.Request) {
 	cdr := (*p.(*model.Cdr))
-	err := db.GetDB().Delete(cdr.Id)
+	res, err := db.GetDB().Delete(cdr.Id)
 	if err != nil {
 		glog.Errorln(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	} else if count, _ := res.RowsAffected(); count != 1 {
+		fmt.Fprint(w, model.Response{"status": "error", "message": "result is not 1"})
 	} else {
 		fmt.Fprint(w, model.Response{"status": "success"})
 	}

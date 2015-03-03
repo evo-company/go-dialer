@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"database/sql"
 
 	"github.com/golang/glog"
 	"github.com/jmoiron/sqlx"
@@ -60,7 +61,7 @@ type CDR struct {
 	CountryCode         string `db:"country_code"`
 }
 
-func (db *DBWrapper) AddCDR(m map[string]string) error {
+func (db *DBWrapper) AddCDR(m map[string]string) (sql.Result, error) {
 	cdr := CDR{
 		UniqueID:            m["UniqueID"],
 		InnerPhoneNumber:    m["InnerPhoneNumber"],
@@ -85,7 +86,7 @@ func (db *DBWrapper) GetCDR(uniqueId string) (CDR, error) {
 	return cdr, err
 }
 
-func (db *DBWrapper) Delete(uniqueId string) error {
+func (db *DBWrapper) Delete(uniqueId string) (sql.Result, error) {
 	db.Lock()
 	defer db.Unlock()
 	return namedExec(DELETE_STMT, map[string]interface{}{"unique_id": uniqueId})
@@ -120,14 +121,14 @@ func GetDB() *DBWrapper {
 	return db
 }
 
-func namedExec(stmt string, arg interface{}) error {
+func namedExec(stmt string, arg interface{}) (sql.Result, error) {
 	tx, err := db.Beginx()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	_, err = tx.NamedExec(stmt, arg)
+	res, err := tx.NamedExec(stmt, arg)
 	tx.Commit()
-	return err
+	return res, err
 }
 
 func initDB() (db *sqlx.DB) {

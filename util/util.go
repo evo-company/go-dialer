@@ -53,13 +53,17 @@ func (in *InnerPhones) LoadInnerNumbers() {
 			glog.Errorln(err)
 			continue
 		}
+		tDuplicateNumbers := model.Set{}
 		for _, number := range strings.Split(numbers, ",") {
 			if _, ok := in.UniqueNumbersMap[number]; ok {
-				in.DuplicateNumbers[number] = struct{}{}
+				tDuplicateNumbers[number] = struct{}{}
 				delete(in.UniqueNumbersMap, number)
 			} else {
 				in.UniqueNumbersMap[number] = countryCode
 			}
+		}
+		if len(tDuplicateNumbers) != 0 {
+			in.DuplicateNumbers = tDuplicateNumbers
 		}
 	}
 	glog.Infoln(in)
