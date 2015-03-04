@@ -133,7 +133,7 @@ func namedExec(stmt string, arg interface{}) (sql.Result, error) {
 
 func initDB() (db *sqlx.DB) {
 	path, _ := filepath.Abs(filepath.Dir(os.Args[0]))
-	db = sqlx.MustOpen("sqlite3", filepath.Join(path, conf.CDR_DB_FILE))
+	db = sqlx.MustConnect("sqlite3", filepath.Join(path, conf.CDR_DB_FILE))
 	db.MustExec(schema)
 	return
 }
