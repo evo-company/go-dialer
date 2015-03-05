@@ -34,11 +34,12 @@ func CdrSaver(wg *sync.WaitGroup, mChan <-chan db.CDR, finishChan <-chan struct{
 				res, err := db.GetDB().Delete(cdr.UniqueID)
 				if err != nil {
 					glog.Errorln("Error while deleting message - ", cdr.UniqueID, err)
-				} else if count, _ := res.RowsAffected(); count != 1 {
-					glog.Errorln("CDR was not deleted - ", cdr.UniqueID)
-				} else {
-					glog.Errorln("<<< ERROR WHILE SAVING", "|", cdr.UniqueID, err)
 				}
+				if count, _ := res.RowsAffected(); count != 1 {
+					glog.Errorln("CDR was not deleted - ", cdr.UniqueID)
+				}
+			} else {
+				glog.Errorln("<<< ERROR WHILE SAVING", "|", cdr.UniqueID, err)
 			}
 		}
 	}

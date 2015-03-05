@@ -42,9 +42,9 @@ var PORTAL_MAP = map[string]PortalMap{
 		"ua": "http://my.example.com:5000/",
 	},
 	"trunk": PortalMap{
-//		"ua": "http://my.trunk.uaprom/",
+		"ua": "http://my.trunk.uaprom/",
 		"ru": "http://my.ru-trunk.uaprom/",
-		"kz": "http://my.kz-trunk.uaprom/",
+//		"kz": "http://my.kz-trunk.uaprom/",
 	},
 	"prod": PortalMap{
 		"ua": "https://my.prom.ua/",
