@@ -102,7 +102,7 @@ func (db *DBWrapper) GetCount() (result int) {
 func (db *DBWrapper) SelectCDRs(limit int) (cdrs []CDR) {
 	db.Lock()
 	defer db.Unlock()
-	rows, _ := db.Queryx("SELECT * FROM cdr limit $1", limit)
+	rows, _ := db.Queryx("SELECT * FROM cdr order by unique_id desc limit $1", limit)
 	cdrs = []CDR{}
 	for rows.Next() {
 		cdr := CDR{}
