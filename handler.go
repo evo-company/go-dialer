@@ -27,7 +27,12 @@ func CdrEventHandler(m gami.Message) {
 	if callType != util.INNER_CALL && callType != -1 {
 		countryCode := util.GetCountryByPhones(innerPhoneNumber, opponentPhoneNumber)
 		if countryCode == "" {
-			glog.Errorln("Unexisting numbers...", innerPhoneNumber, opponentPhoneNumber)
+			glog.Errorln("Unexisting numbers...", innerPhoneNumber, opponentPhoneNumber,
+				countryCode)
+			return
+		}
+		if !util.IsNumbersValid(innerPhoneNumber, opponentPhoneNumber, countryCode) {
+			glog.Errorln("Wrong numbers...", innerPhoneNumber, opponentPhoneNumber, countryCode)
 			return
 		}
 		// We may receive time from asterisk with time zone offset

@@ -200,6 +200,16 @@ func GetPhoneDetails(channel, destChannel, source, destination, callerId string)
 	}
 }
 
+func IsNumbersValid(innerPhoneNumber, opponentPhoneNumber, countryCode string) bool {
+	if len(innerPhoneNumber) < 3 && len(innerPhoneNumber) > 5 {
+		return false
+	}
+	if countryCode == "by" && len(opponentPhoneNumber) < 9 {
+		return false
+	}
+	return len(opponentPhoneNumber) >= 7
+}
+
 func APIResponseWriter(resp model.Response, err error, w http.ResponseWriter) {
 	if err != nil {
 		glog.Errorln(err)
