@@ -17,11 +17,11 @@ import (
 const (
 	INSERT_STMT = `
 		INSERT INTO cdr (
-			unique_id, inner_phone_number, opponent_phone_number, call_type, company_id, disposition,
-			start_time, billable_seconds, country_code
+			unique_id, inner_phone_number, opponent_phone_number, call_type, disposition,
+			start_time, billable_seconds
 		) values (
-			:unique_id, :inner_phone_number, :opponent_phone_number, :call_type, :company_id,
-			:disposition, :start_time, :billable_seconds, :country_code
+			:unique_id, :inner_phone_number, :opponent_phone_number, :call_type, :disposition,
+			:start_time, :billable_seconds
 		)
 	`
 	GET_STMT    = "SELECT * FROM cdr where unique_id=$1"
@@ -41,11 +41,9 @@ var schema = `
 		inner_phone_number text not null,
 		opponent_phone_number text not null,
 		call_type text not null,
-		company_id text,
 		disposition text not null,
 		start_time text not null,
-		billable_seconds text not null,
-		country_code text  not null
+		billable_seconds text not null
 	);
 `
 
@@ -54,11 +52,11 @@ type CDR struct {
 	InnerPhoneNumber    string `db:"inner_phone_number"`
 	OpponentPhoneNumber string `db:"opponent_phone_number"`
 	CallType            string `db:"call_type"`
-	CompanyId           string `db:"company_id"`
 	Disposition         string `db:"disposition"`
 	StartTime           string `db:"start_time"`
 	BillableSeconds     string `db:"billable_seconds"`
-	CountryCode         string `db:"country_code"`
+	CompanyId           string
+	CountryCode         string
 }
 
 func (db *DBWrapper) AddCDR(m map[string]string) (sql.Result, error) {
@@ -67,11 +65,9 @@ func (db *DBWrapper) AddCDR(m map[string]string) (sql.Result, error) {
 		InnerPhoneNumber:    m["InnerPhoneNumber"],
 		OpponentPhoneNumber: m["OpponentPhoneNumber"],
 		CallType:            m["CallType"],
-		CompanyId:           m["CompanyId"],
 		Disposition:         m["Disposition"],
 		StartTime:           m["StartTime"],
 		BillableSeconds:     m["BillableSeconds"],
-		CountryCode:         m["CountryCode"],
 	}
 	db.Lock()
 	defer db.Unlock()

@@ -41,31 +41,37 @@ type InnerPhones struct {
 }
 
 func (in *InnerPhones) LoadInnerNumbers() {
+	cbc := make(chan []string, 500)
+	for countryCode, settings := range conf.GetConf().Agencies {
+		go func(countryCode string) {
+			url := conf.GetConf().GetApi(countryCode, "get_employees_inner_phone")
+			payload, _ := json.Marshal(model.Dict{"CompanyId": settings.CompanyId})
+			numbers, err := SendRequest(payload, url, "GET", settings.Secret, settings.CompanyId)
+			for ; err != nil; numbers, err = SendRequest(payload, url, "GET", settings.Secret,
+				settings.CompanyId) {
+				glog.Errorln("Cannot load numbers", countryCode, err)
+				time.Sleep(5 * time.Second)
+			}
+			cbc <- []string{countryCode, numbers}
+		}(countryCode)
+	}
+
 	in.Lock()
 	defer in.Unlock()
 
-	in.UniqueNumbersMap = model.Dict{}
-	for countryCode, settings := range conf.GetConf().Agencies {
-		url := conf.GetConf().GetApi(countryCode, "get_employees_inner_phone")
-		payload, _ := json.Marshal(model.Dict{"CompanyId": settings.CompanyId})
-		numbers, err := SendRequest(payload, url, "GET", settings.Secret, settings.CompanyId)
-		if err != nil {
-			glog.Errorln(err)
-			continue
-		}
-		tDuplicateNumbers := model.Set{}
+	for i := 0; i < len(conf.GetConf().Agencies); i++ {
+		numbersContainer := <-cbc
+		countryCode, numbers := numbersContainer[0], numbersContainer[1]
 		for _, number := range strings.Split(numbers, ",") {
 			if _, ok := in.UniqueNumbersMap[number]; ok {
-				tDuplicateNumbers[number] = struct{}{}
+				in.DuplicateNumbers[number] = struct{}{}
 				delete(in.UniqueNumbersMap, number)
 			} else {
 				in.UniqueNumbersMap[number] = countryCode
 			}
 		}
-		if len(tDuplicateNumbers) != 0 {
-			in.DuplicateNumbers = tDuplicateNumbers
-		}
 	}
+
 	glog.Infoln(in)
 }
 
@@ -295,6 +301,6 @@ func SendRequest(payload []byte, url, method, secret, companyId string) (string,
 func init() {
 	PHONE_RE, _ = regexp.Compile("^\\w+/(\\d{2,4}|\\d{4}\\w{2})\\D*-.+$")
 
-	InnerPhonesNumbers = InnerPhones{nil, nil, new(sync.RWMutex)}
+	InnerPhonesNumbers = InnerPhones{model.Set{}, model.Dict{}, new(sync.RWMutex)}
 	InnerPhonesNumbers.LoadInnerNumbers()
 }

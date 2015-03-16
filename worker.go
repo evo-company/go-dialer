@@ -56,15 +56,34 @@ func CdrReader(wg *sync.WaitGroup, mChan chan<- db.CDR, finishChan <-chan struct
 			wg.Done()
 			return
 		case <-ticker.C:
-			cdrs := db.GetDB().SelectCDRs(conf.MAX_CDR_NUMBER)
+			cdrs, toProcess := db.GetDB().SelectCDRs(conf.MAX_CDR_NUMBER), 0
 			for _, cdr := range cdrs {
+				countryCode := util.GetCountryByPhones(cdr.InnerPhoneNumber,
+					cdr.OpponentPhoneNumber)
+				if countryCode == "" {
+					glog.Errorln("Unexisting numbers...", cdr.InnerPhoneNumber,
+						cdr.OpponentPhoneNumber, countryCode)
+					db.GetDB().Delete(cdr.UniqueID)
+					continue
+				}
+				if !util.IsNumbersValid(cdr.InnerPhoneNumber, cdr.OpponentPhoneNumber,
+					countryCode) {
+					glog.Errorln("Wrong numbers...", cdr.InnerPhoneNumber, cdr.OpponentPhoneNumber,
+						countryCode)
+					db.GetDB().Delete(cdr.UniqueID)
+					continue
+				}
+				cdr.CountryCode = countryCode
+				cdr.CompanyId = conf.GetConf().Agencies[countryCode].CompanyId
+
 				mChan <- cdr
+				toProcess++
 			}
 
-			cdrsReaded := len(cdrs)
-			glog.Infoln(fmt.Sprintf("<<< READING | PROCESS: %d", cdrsReaded))
-			if cdrsReaded == conf.MAX_CDR_NUMBER {
-				conf.Alert(fmt.Sprintf("Overload with cdr, %d", db.GetDB().GetCount()))
+			dbCount := db.GetDB().GetCount()
+			glog.Infoln(fmt.Sprintf("<<< READING | DB: %d | PROCESS: %d", dbCount, toProcess))
+			if dbCount >= 2 * conf.MAX_CDR_NUMBER {
+				conf.Alert(fmt.Sprintf("Overload with cdr, %d", dbCount))
 			}
 
 			glog.Flush()
