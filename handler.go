@@ -25,12 +25,24 @@ func CdrEventHandler(m gami.Message) {
 	innerPhoneNumber, opponentPhoneNumber, callType := util.GetPhoneDetails(m["Channel"],
 		m["DestinationChannel"], m["Source"], m["Destination"], m["CallerID"])
 	if callType != util.INNER_CALL && callType != -1 {
+		countryCode := util.GetCountryByPhones(innerPhoneNumber, opponentPhoneNumber)
+		if countryCode == "" {
+			glog.Errorln("Unexisting numbers...", innerPhoneNumber, opponentPhoneNumber,
+				countryCode)
+			return
+		}
+		if !util.IsNumbersValid(innerPhoneNumber, opponentPhoneNumber, countryCode) {
+			glog.Errorln("Wrong numbers...", innerPhoneNumber, opponentPhoneNumber, countryCode)
+			return
+		}
 		// We may receive time from asterisk with time zone offset
 		// but for correct processing of it on portal side we need to store it in raw GMT
 		m["StartTime"] = util.ConvertTime(m["StartTime"])
 		m["InnerPhoneNumber"] = innerPhoneNumber
 		m["OpponentPhoneNumber"] = opponentPhoneNumber
 		m["CallType"] = strconv.Itoa(callType)
+		m["CountryCode"] = countryCode
+		m["CompanyId"] = conf.GetConf().Agencies[countryCode].CompanyId
 		glog.Infoln("<<< READING MSG", m["UniqueID"], m)
 
 		res, err := db.GetDB().AddCDR(m)
