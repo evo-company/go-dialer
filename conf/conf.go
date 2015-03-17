@@ -40,11 +40,13 @@ type PortalMap map[string]string
 var PORTAL_MAP = map[string]PortalMap{
 	"local": PortalMap{
 		"ua": "http://my.example.com:5000/",
+		"ru": "http://my.ru-trunk.uaprom/",
 	},
 	"trunk": PortalMap{
 		"ua": "http://my.trunk.uaprom/",
 		"ru": "http://my.ru-trunk.uaprom/",
-//		"kz": "http://my.kz-trunk.uaprom/",
+		"kz": "http://my.kz-trunk.uaprom/",
+		"by": "http://my.by-trunk.uaprom/",
 	},
 	"prod": PortalMap{
 		"ua": "https://my.prom.ua/",

@@ -27,6 +27,15 @@ func init() {
 }
 
 func main() {
+	wg := sync.WaitGroup{}
+	finishChannels := []chan struct{}{make(chan struct{})}
+
+	numbersChan := make(chan []string, 10)
+	wg.Add(1)
+	go NumbersLoader(&wg, numbersChan, finishChannels[len(finishChannels)-1],
+		time.NewTicker(conf.NUMBERS_LOAD_INTERVAL))
+	util.LoadInnerNumbers(numbersChan)
+
 	// Saving in and out calls and showing popups
 	pch := PhoneCallsHandler
 	ami.GetAMI().RegisterHandler("Bridge", &pch)
@@ -54,11 +63,10 @@ func main() {
 	}
 	ami.GetAMI().RegisterHandler("QueueStatusComplete", &qsch)
 
-	mChan := make(chan db.CDR, conf.MAX_CDR_NUMBER)
-	wg := sync.WaitGroup{}
 
-	finishChannels := []chan struct{}{make(chan struct{})}
+	finishChannels = append(finishChannels, make(chan struct{}))
 	wg.Add(1)
+	mChan := make(chan db.CDR, conf.MAX_CDR_NUMBER)
 	go CdrReader(&wg, mChan, finishChannels[len(finishChannels)-1],
 		time.NewTicker(conf.CDR_READ_INTERVAL))
 
@@ -67,11 +75,6 @@ func main() {
 		wg.Add(1)
 		go CdrSaver(&wg, mChan, finishChannels[len(finishChannels)-1])
 	}
-
-	finishChannels = append(finishChannels, make(chan struct{}))
-	wg.Add(1)
-	go NumbersLoader(&wg, finishChannels[len(finishChannels)-1],
-		time.NewTicker(conf.NUMBERS_LOAD_INTERVAL))
 
 	if conf.GetConf().ManageQueues {
 		finishChannels = append(finishChannels, make(chan struct{}))

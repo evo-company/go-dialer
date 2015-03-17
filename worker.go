@@ -72,7 +72,8 @@ func CdrReader(wg *sync.WaitGroup, mChan chan<- db.CDR, finishChan <-chan struct
 	}
 }
 
-func NumbersLoader(wg *sync.WaitGroup, finishChan <-chan struct{}, ticker *time.Ticker) {
+func NumbersLoader(wg *sync.WaitGroup, numbersChan chan []string, finishChan <-chan struct{},
+	ticker *time.Ticker) {
 	glog.Infoln("Initiating NumbersLoader...")
 	for {
 		select {
@@ -82,7 +83,26 @@ func NumbersLoader(wg *sync.WaitGroup, finishChan <-chan struct{}, ticker *time.
 			wg.Done()
 			return
 		case <-ticker.C:
-			util.InnerPhonesNumbers.LoadInnerNumbers()
+			go util.LoadInnerNumbers(numbersChan)
+		case numbersContainer := <-numbersChan:
+			util.InnerPhoneNumbers.Lock()
+			glog.Infoln("Processing numbers", numbersContainer)
+
+			countryCode, numbers := numbersContainer[0], numbersContainer[1]
+			tNumbersSet := model.Set{}
+			// If number is already in the map - lets save also in other set for different handling
+			for _, number := range strings.Split(numbers, ",") {
+				for _, numbers := range util.InnerPhoneNumbers.NumbersMap {
+					if _, ok := numbers[number]; ok {
+						util.InnerPhoneNumbers.DuplicateNumbers[number] = struct{}{}
+						break
+					}
+				}
+				tNumbersSet[number] = struct{}{}
+			}
+
+			util.InnerPhoneNumbers.NumbersMap[countryCode] = tNumbersSet
+			util.InnerPhoneNumbers.Unlock()
 		}
 	}
 }
@@ -98,62 +118,61 @@ func QueueManager(wg *sync.WaitGroup, queueTransport <-chan chan gami.Message, f
 			wg.Done()
 			return
 		case <-ticker.C:
-			util.InnerPhonesNumbers.RLock()
-			glog.Infoln("<<< MANAGING QUEUES...")
-			// Send queue status to AMI
-			if err := ami.QueueStatus(); err != nil {
-				glog.Errorln(err)
-				return
-			}
-			// and wait for channel with active queues from asterisk
-			activeQueuesChan := <-queueTransport
-			// pre-initialize map for numbers state per each country
-			queuesNumberMap := util.GetActiveQueuesMap(activeQueuesChan)
-			numbersStateMap := map[string]model.Dict{}
-			for countryCode, _ := range conf.GetConf().Agencies {
-				numbersStateMap[countryCode] = model.Dict{}
-			}
-			// For each inner number get its static queue from asterisk db
-			for number, countryCode := range util.InnerPhonesNumbers.UniqueNumbersMap {
-				staticQueue, err := ami.GetStaticQueue(number)
-				if err != nil {
-					// if there is no static queue for number - some problem with it, skip
-					continue
-				}
-				staticQueue = strings.Split(staticQueue, "\n")[0]
-				// if there is no active queues for such number, then its not available
-				if _, ok := queuesNumberMap[number]; !ok {
-					numbersStateMap[countryCode][number] = "not_available"
-				} else {
-					// if there are some, which are not its static queue and not general queue
-					// (same as static but without last digit)
-					// then number should be removed from them and still not available
-					status := "not_available"
-					for _, queue := range queuesNumberMap[number] {
-						generalizedQueue := staticQueue[:len(staticQueue)-1]
-						if staticQueue == queue || generalizedQueue == queue {
-							status = "available"
-						} else {
-							_, err := ami.RemoveFromQueue(queue, countryCode, number)
-							if err != nil {
-								glog.Errorln(err, number)
-							}
-						}
-					}
-					numbersStateMap[countryCode][number] = status
-				}
-			}
-			for countryCode, numbersState := range numbersStateMap {
+			util.InnerPhoneNumbers.RLock()
+            glog.Infoln("<<< MANAGING QUEUES...")
+            // Send queue status to AMI
+            if err := ami.QueueStatus(); err != nil {
+                glog.Errorln(err)
+                return
+            }
+            // and wait for channel with active queues from asterisk
+            activeQueuesChan := <-queueTransport
+            // sort active queues for each number per country
+            queuesNumberMap := util.GetActiveQueuesMap(activeQueuesChan)
+            for countryCode, settings := range conf.GetConf().Agencies {
+                tqs := queuesNumberMap[countryCode]
+                numbersState := make(model.Dict)
+                // For each inner number get its static queue from asterisk db
+                for number, _ := range util.InnerPhoneNumbers.NumbersMap[countryCode] {
+                    staticQueue, err := ami.GetStaticQueue(number)
+                    if err != nil {
+                        // if there is no static queue for number - some problem with it, skip
+                        continue
+                    }
+                    staticQueue = strings.Split(staticQueue, "\n")[0]
+                    // if there is no active queues for such number, then its not available
+                    if _, ok := tqs[number]; !ok {
+                        numbersState[number] = "not_available"
+                    } else {
+                        // if there are some, which are not its static queue and not general queue
+                        // (same as static but without last digit)
+                        // then number should be removed from them and still not available
+                        status := "not_available"
+                        for _, queue := range tqs[number] {
+                            generalizedQueue := staticQueue[:len(staticQueue)-1]
+                            if staticQueue == queue || generalizedQueue == queue {
+                                status = "available"
+                            } else {
+//                                _, err := ami.RemoveFromQueue(queue, countryCode, number)
+//                                if err != nil {
+//                                    glog.Errorln(err, number)
+//                                }
+                            }
+                        }
+                        numbersState[number] = status
+                    }
+                }
+				glog.Infoln("NUMBERS STATE", numbersState)
+
 				url := conf.GetConf().GetApi(countryCode, "save_company_queues_states")
 				payload, _ := json.Marshal(numbersState)
-				settings := conf.GetConf().Agencies[countryCode]
 				_, err := util.SendRequest(payload, url, "POST", settings.Secret,
-					settings.CompanyId)
+				settings.CompanyId)
 				if err != nil {
-					glog.Errorln(err)
+					glog.Errorln(err, url)
 				}
 			}
-			util.InnerPhonesNumbers.RUnlock()
-		}
+			util.InnerPhoneNumbers.RUnlock()
+        }
 	}
 }

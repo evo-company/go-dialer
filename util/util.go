@@ -32,47 +32,37 @@ const (
 )
 
 var PHONE_RE *regexp.Regexp
-var InnerPhonesNumbers InnerPhones
+var InnerPhoneNumbers InnerPhones
 
 type InnerPhones struct {
 	DuplicateNumbers model.Set
-	UniqueNumbersMap model.Dict
+	NumbersMap map[string]model.Set
 	*sync.RWMutex
 }
 
-func (in *InnerPhones) LoadInnerNumbers() {
-	cbc := make(chan []string, 500)
+func LoadInnerNumbers(numbersChan chan<- []string) {
+	wg := sync.WaitGroup{}
 	for countryCode, settings := range conf.GetConf().Agencies {
-		go func(countryCode string) {
+		wg.Add(1)
+		go func(countryCode string, wg *sync.WaitGroup) {
 			url := conf.GetConf().GetApi(countryCode, "get_employees_inner_phone")
 			payload, _ := json.Marshal(model.Dict{"CompanyId": settings.CompanyId})
-			numbers, err := SendRequest(payload, url, "GET", settings.Secret, settings.CompanyId)
-			for ; err != nil; numbers, err = SendRequest(payload, url, "GET", settings.Secret,
-				settings.CompanyId) {
-				glog.Errorln("Cannot load numbers", countryCode, err)
+
+			for i := 0; i < 10; i++ {
+				numbers, err := SendRequest(payload, url, "GET", settings.Secret,
+					settings.CompanyId)
+				if err == nil {
+					numbersChan <- []string{countryCode, numbers}
+					wg.Done()
+					return
+				}
+				glog.Errorln("Cannot load numbers", err)
 				time.Sleep(5 * time.Second)
 			}
-			cbc <- []string{countryCode, numbers}
-		}(countryCode)
+		}(countryCode, &wg)
 	}
 
-	in.Lock()
-	defer in.Unlock()
-
-	for i := 0; i < len(conf.GetConf().Agencies); i++ {
-		numbersContainer := <-cbc
-		countryCode, numbers := numbersContainer[0], numbersContainer[1]
-		for _, number := range strings.Split(numbers, ",") {
-			if _, ok := in.UniqueNumbersMap[number]; ok {
-				in.DuplicateNumbers[number] = struct{}{}
-				delete(in.UniqueNumbersMap, number)
-			} else {
-				in.UniqueNumbersMap[number] = countryCode
-			}
-		}
-	}
-
-	glog.Infoln(in)
+	wg.Wait()
 }
 
 type SafeCallsCache struct {
@@ -117,8 +107,8 @@ func ConvertTime(t string) string {
 }
 
 func GetActiveQueuesMap(activeQueuesChan <-chan gami.Message) (
-	queuesNumberMap map[string][]string) {
-	queuesNumberMap = make(map[string][]string)
+	queuesNumberMap map[string]map[string][]string) {
+	queuesNumberMap = make(map[string]map[string][]string)
 	for len(activeQueuesChan) > 0 {
 		qm := <-activeQueuesChan
 		queue, number, country := qm["Queue"], qm["Name"][6:10], qm["Name"][10:12]
@@ -126,11 +116,14 @@ func GetActiveQueuesMap(activeQueuesChan <-chan gami.Message) (
 		if country != "ua" && country != "ru" {
 			continue
 		}
-		activeQueues, ok := queuesNumberMap[number]
+		if _, ok := queuesNumberMap[country]; !ok {
+			queuesNumberMap[country] = make(map[string][]string)
+		}
+		activeQueues, ok := queuesNumberMap[country][number]
 		if !ok {
-			queuesNumberMap[number] = []string{queue}
+			queuesNumberMap[country][number] = []string{queue}
 		} else {
-			queuesNumberMap[number] = append(activeQueues, queue)
+			queuesNumberMap[country][number] = append(activeQueues, queue)
 		}
 	}
 	return
@@ -149,13 +142,13 @@ func ShowCallingPopup(innerPhoneNumber, callingPhone, country string) error {
 }
 
 func GetCountryByPhones(innerPhoneNumber, opponentPhoneNumber string) (countryCode string) {
-	InnerPhonesNumbers.RLock()
-	defer InnerPhonesNumbers.RUnlock()
+	InnerPhoneNumbers.RLock()
+	defer InnerPhoneNumbers.RUnlock()
 
 //	If inner number is same for more than one portal it will be in separate structure
 //	And that means that we need to guess portal country by opponent number
 //	In other case just return country from map
-	if _, ok := InnerPhonesNumbers.DuplicateNumbers[innerPhoneNumber]; ok {
+	if _, ok := InnerPhoneNumbers.DuplicateNumbers[innerPhoneNumber]; ok {
 		outerNumber := strings.TrimPrefix(opponentPhoneNumber, "+")
 		if outerNumber[:3] == "380" || (outerNumber[:1] == "0" && len(outerNumber) == 10) {
 			countryCode = "ua"
@@ -168,7 +161,12 @@ func GetCountryByPhones(innerPhoneNumber, opponentPhoneNumber string) (countryCo
 			countryCode = "ru"
 		}
 	} else {
-		countryCode = InnerPhonesNumbers.UniqueNumbersMap[innerPhoneNumber]
+		for country, numbers := range InnerPhoneNumbers.NumbersMap {
+			if _, ok := numbers[innerPhoneNumber]; ok {
+				countryCode = country
+				break
+			}
+		}
 	}
 	return
 }
@@ -178,15 +176,13 @@ func GetPhoneDetails(channel, destChannel, source, destination, callerId string)
 	in := PHONE_RE.FindStringSubmatch(channel)
 	out := PHONE_RE.FindStringSubmatch(destChannel)
 	if in != nil && out != nil {
-		// If both phones are inner and same - its incoming call through queue
-		// If not - inner call
-		if in[1] == out[1] {
-			// If there is no any form of source - its hidden call
-			if source == "" && callerId == "" {
-				return out[1], "xxxx", INCOMING_CALL_HIDDEN
-			} else {
-				return out[1], source, INCOMING_CALL
-			}
+		// If both channels are inner but source is empty - hidden incoming
+		// if source is present and not inner - incoming
+		// in other case - inner call, skip
+		if source == "" && callerId == "" {
+			return out[1], "xxxx", INCOMING_CALL_HIDDEN
+		} else if len(source) > 4 {
+			return out[1], source, INCOMING_CALL
 		} else {
 			return "", "", INNER_CALL
 		}
@@ -301,6 +297,5 @@ func SendRequest(payload []byte, url, method, secret, companyId string) (string,
 func init() {
 	PHONE_RE, _ = regexp.Compile("^\\w+/(\\d{2,4}|\\d{4}\\w{2})\\D*-.+$")
 
-	InnerPhonesNumbers = InnerPhones{model.Set{}, model.Dict{}, new(sync.RWMutex)}
-	InnerPhonesNumbers.LoadInnerNumbers()
+	InnerPhoneNumbers = InnerPhones{model.Set{}, map[string]model.Set{}, new(sync.RWMutex)}
 }
