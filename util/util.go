@@ -45,6 +45,7 @@ func LoadInnerNumbers(numbersChan chan<- []string) {
 	for countryCode, settings := range conf.GetConf().Agencies {
 		wg.Add(1)
 		go func(countryCode string, wg *sync.WaitGroup) {
+			settings := conf.GetConf().Agencies[countryCode]
 			url := conf.GetConf().GetApi(countryCode, "get_employees_inner_phone")
 			payload, _ := json.Marshal(model.Dict{"CompanyId": settings.CompanyId})
 
