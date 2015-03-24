@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 	"net/http"
 	"strconv"
 
@@ -49,13 +50,16 @@ func CdrEventHandler(m gami.Message) {
 	m["CountryCode"] = countryCode
 	m["CompanyId"] = conf.GetConf().Agencies[countryCode].CompanyId
 
-	glog.Infoln("<<< SAVING CDR", m["UniqueID"], m)
 
-	res, err := db.GetDB().AddCDR(m)
-	if count, _ := res.RowsAffected(); err != nil || count != 1 {
-		conf.Alert("Cannot add cdr to db")
-		panic(err)
+	_, err := db.GetDB().AddCDR(m)
+	if err != nil {
+		conf.Alert(fmt.Sprintf("Cannot add cdr to db | %v", err))
+		time.Sleep(5 * time.Second)
+		go CdrEventHandler(m)
+		return
 	}
+
+	glog.Infoln("<<< SAVED CDR", m["UniqueID"], m)
 }
 
 func PhoneCallsHandler(m gami.Message) {
@@ -87,9 +91,11 @@ func PhoneCallsHandler(m gami.Message) {
 	if conf.GetConf().SavePhoneCalls {
 		fileName := fmt.Sprintf("%s/%s-%s.wav", conf.GetConf().FolderForCalls, conf.GetConf().Name,
 			m["Uniqueid"])
-		if res, err := ami.SendMixMonitor(m["Channel"], fileName); err != nil {
-			glog.Infoln("MixMonitor sent...", res)
+		res, err := ami.SendMixMonitor(m["Channel"], fileName)
+		if err != nil {
 			glog.Errorln(err)
+		} else {
+			glog.Infoln("MixMonitor sent...", res)
 		}
 	}
 }
