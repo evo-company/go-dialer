@@ -87,7 +87,8 @@ func PhoneCallsHandler(m gami.Message) {
 	if conf.GetConf().SavePhoneCalls {
 		fileName := fmt.Sprintf("%s/%s-%s.wav", conf.GetConf().FolderForCalls, conf.GetConf().Name,
 			m["Uniqueid"])
-		if _, err := ami.SendMixMonitor(m["Channel"], fileName); err != nil {
+		if res, err := ami.SendMixMonitor(m["Channel"], fileName); err != nil {
+			glog.Infoln("MixMonitor sent...", res)
 			glog.Errorln(err)
 		}
 	}
