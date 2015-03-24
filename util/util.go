@@ -195,12 +195,10 @@ func GetPhoneDetails(channel, destChannel, source, destination, callerId string)
 	if out != nil {
 		// If outcome channel contains inner number:
 		// - most likely that incoming
-		// - or hodden (should be passed)
+		// - or hidden (should be passed)
 		// - or incoming into queue (should be passed)
 		if source == "" && callerId == "" {
 			return out[1], "xxxx", INCOMING_CALL_HIDDEN
-		} else if out[1] != source {
-			return "", "", -1
 		} else {
 			return out[1], source, INCOMING_CALL
 		}
