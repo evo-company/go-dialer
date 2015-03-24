@@ -63,7 +63,6 @@ func main() {
 	}
 	ami.GetAMI().RegisterHandler("QueueStatusComplete", &qsch)
 
-
 	finishChannels = append(finishChannels, make(chan struct{}))
 	wg.Add(1)
 	mChan := make(chan db.CDR, conf.MAX_CDR_NUMBER)

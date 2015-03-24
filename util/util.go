@@ -176,9 +176,10 @@ func GetPhoneDetails(channel, destChannel, source, destination, callerId string)
 	in := PHONE_RE.FindStringSubmatch(channel)
 	out := PHONE_RE.FindStringSubmatch(destChannel)
 	if in != nil && out != nil {
-		// If both channels are inner but source is empty - hidden incoming
-		// if source is present and not inner - incoming
-		// in other case - inner call, skip
+		// If both channels contain inner numbers:
+		// - most likely that this is incoming call passed through queue
+		// - or hidden incoming call
+		// - or inner call (should be passed)
 		if source == "" && callerId == "" {
 			return out[1], "xxxx", INCOMING_CALL_HIDDEN
 		} else if len(source) > 4 {
@@ -187,12 +188,19 @@ func GetPhoneDetails(channel, destChannel, source, destination, callerId string)
 			return "", "", INNER_CALL
 		}
 	}
-	if in != nil && len(destination) >= 4 {
+	if in != nil {
+		// If incoming channel contains inner number - just outgoing call
 		return in[1], destination, OUTGOING_CALL
 	}
 	if out != nil {
+		// If outcome channel contains inner number:
+		// - most likely that incoming
+		// - or hodden (should be passed)
+		// - or incoming into queue (should be passed)
 		if source == "" && callerId == "" {
 			return out[1], "xxxx", INCOMING_CALL_HIDDEN
+		} else if out[1] != source {
+			return "", "", -1
 		} else {
 			return out[1], source, INCOMING_CALL
 		}

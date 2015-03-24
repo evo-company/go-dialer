@@ -63,7 +63,7 @@ func CdrReader(wg *sync.WaitGroup, mChan chan<- db.CDR, finishChan <-chan struct
 
 			dbCount := db.GetDB().GetCount()
 			glog.Infoln(fmt.Sprintf("<<< READING | DB: %d | PROCESS: %d", dbCount, len(cdrs)))
-			if dbCount >= 2 * conf.MAX_CDR_NUMBER {
+			if dbCount >= 2*conf.MAX_CDR_NUMBER {
 				conf.Alert(fmt.Sprintf("Overload with cdr, %d", dbCount))
 			}
 
@@ -119,60 +119,60 @@ func QueueManager(wg *sync.WaitGroup, queueTransport <-chan chan gami.Message, f
 			return
 		case <-ticker.C:
 			util.InnerPhoneNumbers.RLock()
-            glog.Infoln("<<< MANAGING QUEUES...")
-            // Send queue status to AMI
-            if err := ami.QueueStatus(); err != nil {
-                glog.Errorln(err)
-                return
-            }
-            // and wait for channel with active queues from asterisk
-            activeQueuesChan := <-queueTransport
-            // sort active queues for each number per country
-            queuesNumberMap := util.GetActiveQueuesMap(activeQueuesChan)
-            for countryCode, settings := range conf.GetConf().Agencies {
-                tqs := queuesNumberMap[countryCode]
-                numbersState := make(model.Dict)
-                // For each inner number get its static queue from asterisk db
-                for number, _ := range util.InnerPhoneNumbers.NumbersMap[countryCode] {
-                    staticQueue, err := ami.GetStaticQueue(number)
-                    if err != nil {
-                        // if there is no static queue for number - some problem with it, skip
-                        continue
-                    }
-                    staticQueue = strings.Split(staticQueue, "\n")[0]
-                    // if there is no active queues for such number, then its not available
-                    if _, ok := tqs[number]; !ok {
-                        numbersState[number] = "not_available"
-                    } else {
-                        // if there are some, which are not its static queue and not general queue
-                        // (same as static but without last digit)
-                        // then number should be removed from them and still not available
-                        status := "not_available"
-                        for _, queue := range tqs[number] {
-                            generalizedQueue := staticQueue[:len(staticQueue)-1]
-                            if staticQueue == queue || generalizedQueue == queue {
-                                status = "available"
-                            } else {
-//                                _, err := ami.RemoveFromQueue(queue, countryCode, number)
-//                                if err != nil {
-//                                    glog.Errorln(err, number)
-//                                }
-                            }
-                        }
-                        numbersState[number] = status
-                    }
-                }
+			glog.Infoln("<<< MANAGING QUEUES...")
+			// Send queue status to AMI
+			if err := ami.QueueStatus(); err != nil {
+				glog.Errorln(err)
+				return
+			}
+			// and wait for channel with active queues from asterisk
+			activeQueuesChan := <-queueTransport
+			// sort active queues for each number per country
+			queuesNumberMap := util.GetActiveQueuesMap(activeQueuesChan)
+			for countryCode, settings := range conf.GetConf().Agencies {
+				tqs := queuesNumberMap[countryCode]
+				numbersState := make(model.Dict)
+				// For each inner number get its static queue from asterisk db
+				for number, _ := range util.InnerPhoneNumbers.NumbersMap[countryCode] {
+					staticQueue, err := ami.GetStaticQueue(number)
+					if err != nil {
+						// if there is no static queue for number - some problem with it, skip
+						continue
+					}
+					staticQueue = strings.Split(staticQueue, "\n")[0]
+					// if there is no active queues for such number, then its not available
+					if _, ok := tqs[number]; !ok {
+						numbersState[number] = "not_available"
+					} else {
+						// if there are some, which are not its static queue and not general queue
+						// (same as static but without last digit)
+						// then number should be removed from them and still not available
+						status := "not_available"
+						for _, queue := range tqs[number] {
+							generalizedQueue := staticQueue[:len(staticQueue)-1]
+							if staticQueue == queue || generalizedQueue == queue {
+								status = "available"
+							} else {
+								//_, err := ami.RemoveFromQueue(queue, countryCode, number)
+								//	if err != nil {
+								//	glog.Errorln(err, number)
+								//}
+							}
+						}
+						numbersState[number] = status
+					}
+				}
 				glog.Infoln("NUMBERS STATE", numbersState)
 
 				url := conf.GetConf().GetApi(countryCode, "save_company_queues_states")
 				payload, _ := json.Marshal(numbersState)
 				_, err := util.SendRequest(payload, url, "POST", settings.Secret,
-				settings.CompanyId)
+					settings.CompanyId)
 				if err != nil {
 					glog.Errorln(err, url)
 				}
 			}
 			util.InnerPhoneNumbers.RUnlock()
-        }
+		}
 	}
 }
