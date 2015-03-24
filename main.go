@@ -38,7 +38,7 @@ func main() {
 
 	// Saving in and out calls and showing popups
 	pch := PhoneCallsHandler
-	ami.GetAMI().RegisterHandler("Bridge", &pch)
+	ami.GetAMI().RegisterHandler("BridgeEnter", &pch)
 
 	// CdrEventHandler reads cdrs, processes them and stores in db for further sending to
 	// corresponding portals

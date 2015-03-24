@@ -59,13 +59,13 @@ func CdrEventHandler(m gami.Message) {
 }
 
 func PhoneCallsHandler(m gami.Message) {
-	uniqueId := m["Uniqueid1"]
+	bridgeUniqueId := m["BridgeUniqueid"]
 	callsCache.Lock()
 	defer callsCache.Unlock()
-	if _, ok := callsCache.Map[uniqueId]; ok {
+	if _, ok := callsCache.Map[bridgeUniqueId]; ok {
 		return
 	}
-	callsCache.Map[uniqueId] = struct{}{}
+	callsCache.Map[bridgeUniqueId] = struct{}{}
 
 	// If Channel2 field has inner number then its incoming call and we need to show popup
 	// t := util.PHONE_RE.FindStringSubmatch(m["Channel2"])
@@ -86,8 +86,8 @@ func PhoneCallsHandler(m gami.Message) {
 
 	if conf.GetConf().SavePhoneCalls {
 		fileName := fmt.Sprintf("%s/%s-%s.wav", conf.GetConf().FolderForCalls, conf.GetConf().Name,
-			uniqueId)
-		if _, err := ami.SendMixMonitor(m["Channel1"], fileName); err != nil {
+			m["Uniqueid"])
+		if _, err := ami.SendMixMonitor(m["Channel"], fileName); err != nil {
 			glog.Errorln(err)
 		}
 	}
