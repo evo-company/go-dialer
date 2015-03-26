@@ -53,8 +53,7 @@ func CdrEventHandler(m gami.Message) {
 	_, err := db.GetDB().AddCDR(m)
 	if err != nil {
 		glog.Errorln(err)
-		conf.Alert(fmt.Sprintf("Cannot add cdr to db | %v", err))
-		time.Sleep(5 * time.Second)
+		time.Sleep(10 * time.Second)
 		go CdrEventHandler(m)
 		return
 	}
