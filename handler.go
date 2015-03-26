@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"net/http"
 	"strconv"
 	"time"
@@ -103,8 +104,14 @@ func PhoneCallsHandler(m gami.Message) {
 // =============
 // REST handlers
 // =============
-func DBStats(w http.ResponseWriter, r *http.Request) {
-	// fmt.Fprint(w, db.GetStats())
+func Stats(w http.ResponseWriter, r *http.Request) {
+	page := `
+		<h1>{{.Name}} dialer stats</h1>
+		<b>DB CDR</b>: {{.Count}}
+	`
+	t, _ := template.New("stats").Parse(page)
+	stats := model.Stats{conf.GetConf().Name, db.GetDB().GetCount()}
+	t.Execute(w, stats)
 }
 
 func CdrCount(w http.ResponseWriter, r *http.Request) {

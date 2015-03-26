@@ -101,7 +101,7 @@ func initRoutes() {
 	goji.Get("/", ImUp)
 	goji.Get("/ping", PingAsterisk)
 	goji.Get("/check-portals", CheckPortals)
-	goji.Get("/db-stats", DBStats)
+	goji.Get("/stats", Stats)
 	goji.Get("/cdr/count", CdrCount)
 	goji.Get("/cdr/get", withStructParams(new(model.Cdr), GetCdr))
 	goji.Post("/cdr/delete", withStructParams(new(model.Cdr), DeleteCdr))

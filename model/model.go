@@ -38,6 +38,11 @@ func (c Call) GetCallerID() string {
 	return fmt.Sprintf("call_from_CRM <%v>", c.Inline)
 }
 
+type Stats struct {
+	Name string
+	Count int
+}
+
 type PhoneCall struct {
 	Country      string `param:"country" json:"country"`
 	CallingPhone string `param:"calling_phone"`
