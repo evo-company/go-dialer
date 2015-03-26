@@ -62,14 +62,14 @@ func CdrEventHandler(m gami.Message) {
 }
 
 func PhoneCallsHandler(m gami.Message) {
-	bridgeUniqueId := m["BridgeUniqueid"]
+	channel := m["Channel"]
 	callsCache.Lock()
 	defer callsCache.Unlock()
-	if _, ok := callsCache.Map[bridgeUniqueId]; ok {
+	if _, ok := callsCache.Map[channel]; ok {
 		return
 	}
 	glog.Infoln(m)
-	callsCache.Map[bridgeUniqueId] = struct{}{}
+	callsCache.Map[channel] = struct{}{}
 
 	// If Channel2 field has inner number then its incoming call and we need to show popup
 	// t := util.PHONE_RE.FindStringSubmatch(m["Channel2"])
