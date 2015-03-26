@@ -101,11 +101,14 @@ func (db *DBWrapper) GetCount() (result int) {
 	return
 }
 
-func (db *DBWrapper) SelectCDRs(limit int) (cdrs []CDR) {
+func (db *DBWrapper) SelectCDRs(limit int) (cdrs []CDR, err error) {
 	db.Lock()
 	defer db.Unlock()
-	rows, _ := db.Queryx("SELECT * FROM cdr order by id desc limit $1", limit)
 	cdrs = []CDR{}
+	rows, err := db.Queryx("SELECT * FROM cdr order by id desc limit $1", limit)
+	if err != nil {
+		return
+	}
 	for rows.Next() {
 		cdr := CDR{}
 		err := rows.StructScan(&cdr)

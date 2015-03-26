@@ -56,7 +56,10 @@ func CdrReader(wg *sync.WaitGroup, mChan chan<- db.CDR, finishChan <-chan struct
 			wg.Done()
 			return
 		case <-ticker.C:
-			cdrs := db.GetDB().SelectCDRs(conf.MAX_CDR_NUMBER)
+			cdrs, err := db.GetDB().SelectCDRs(conf.MAX_CDR_NUMBER)
+			if err != nil {
+				glog.Errorln(err)
+			}
 			for _, cdr := range cdrs {
 				mChan <- cdr
 			}
