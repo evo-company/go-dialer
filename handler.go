@@ -3,9 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/warik/gami"
@@ -50,9 +50,9 @@ func CdrEventHandler(m gami.Message) {
 	m["CountryCode"] = countryCode
 	m["CompanyId"] = conf.GetConf().Agencies[countryCode].CompanyId
 
-
 	_, err := db.GetDB().AddCDR(m)
 	if err != nil {
+		glog.Errorln(err)
 		conf.Alert(fmt.Sprintf("Cannot add cdr to db | %v", err))
 		time.Sleep(5 * time.Second)
 		go CdrEventHandler(m)
@@ -69,6 +69,7 @@ func PhoneCallsHandler(m gami.Message) {
 	if _, ok := callsCache.Map[bridgeUniqueId]; ok {
 		return
 	}
+	glog.Infoln(m)
 	callsCache.Map[bridgeUniqueId] = struct{}{}
 
 	// If Channel2 field has inner number then its incoming call and we need to show popup
@@ -107,7 +108,7 @@ func DBStats(w http.ResponseWriter, r *http.Request) {
 	// fmt.Fprint(w, db.GetStats())
 }
 
-func CdrNumber(w http.ResponseWriter, r *http.Request) {
+func CdrCount(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, model.Response{"number_of_cdrs": strconv.Itoa(db.GetDB().GetCount())})
 }
 
@@ -126,7 +127,7 @@ func DeleteCdr(p interface{}, w http.ResponseWriter, r *http.Request) {
 
 func GetCdr(p interface{}, w http.ResponseWriter, r *http.Request) {
 	cdr := (*p.(*model.Cdr))
-	returnCdr, err := db.GetDB().GetCDR(cdr.Id)
+	returnCdr, err := db.GetDB().GetCDR(cdr.UniqueID)
 	if err != nil {
 		glog.Errorln(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

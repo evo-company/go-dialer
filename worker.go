@@ -31,7 +31,7 @@ func CdrSaver(wg *sync.WaitGroup, mChan <-chan db.CDR, finishChan <-chan struct{
 			_, err := util.SendRequest(data, url, "POST", settings.Secret, settings.CompanyId)
 			if err == nil {
 				glog.Infoln("<<< CDR SAVED", "|", cdr.UniqueID)
-				res, err := db.GetDB().Delete(cdr.UniqueID)
+				res, err := db.GetDB().Delete(cdr.ID)
 				if err != nil {
 					glog.Errorln("Error while deleting message - ", cdr.UniqueID, err)
 				}

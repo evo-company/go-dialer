@@ -52,7 +52,8 @@ type SignedInputData struct {
 }
 
 type Cdr struct {
-	Id string `param:"id"`
+	Id int `param:"id"`
+	UniqueID string `param:"unique_id"`
 }
 
 type SignedData struct {

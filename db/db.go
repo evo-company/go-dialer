@@ -25,7 +25,7 @@ const (
 		)
 	`
 	GET_STMT    = "SELECT * FROM cdr where unique_id=$1"
-	DELETE_STMT = "DELETE FROM cdr where unique_id=:unique_id"
+	DELETE_STMT = "DELETE FROM cdr where id=:id"
 	COUNT_STMT  = "SELECT count(*) from cdr"
 )
 
@@ -37,7 +37,8 @@ type DBWrapper struct {
 var db *DBWrapper
 var schema = `
 	CREATE TABLE IF NOT EXISTS cdr (
-		unique_id text PRIMARY KEY,
+		id integer PRIMARY KEY AUTOINCREMENT,
+		unique_id text not null,
 		inner_phone_number text not null,
 		opponent_phone_number text not null,
 		call_type text not null,
@@ -50,6 +51,7 @@ var schema = `
 `
 
 type CDR struct {
+	ID                  int `db:"id"`
 	UniqueID            string `db:"unique_id"`
 	InnerPhoneNumber    string `db:"inner_phone_number"`
 	OpponentPhoneNumber string `db:"opponent_phone_number"`
@@ -86,10 +88,10 @@ func (db *DBWrapper) GetCDR(uniqueId string) (CDR, error) {
 	return cdr, err
 }
 
-func (db *DBWrapper) Delete(uniqueId string) (sql.Result, error) {
+func (db *DBWrapper) Delete(id int) (sql.Result, error) {
 	db.Lock()
 	defer db.Unlock()
-	return namedExec(DELETE_STMT, map[string]interface{}{"unique_id": uniqueId})
+	return namedExec(DELETE_STMT, map[string]interface{}{"id": id})
 }
 
 func (db *DBWrapper) GetCount() (result int) {
@@ -102,7 +104,7 @@ func (db *DBWrapper) GetCount() (result int) {
 func (db *DBWrapper) SelectCDRs(limit int) (cdrs []CDR) {
 	db.Lock()
 	defer db.Unlock()
-	rows, _ := db.Queryx("SELECT * FROM cdr order by unique_id desc limit $1", limit)
+	rows, _ := db.Queryx("SELECT * FROM cdr order by id desc limit $1", limit)
 	cdrs = []CDR{}
 	for rows.Next() {
 		cdr := CDR{}
