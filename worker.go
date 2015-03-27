@@ -95,14 +95,15 @@ func NumbersLoader(wg *sync.WaitGroup, numbersChan chan []string, finishChan <-c
 			tNumbersSet := model.Set{}
 			// If number is already in the map - lets save also in other set for different handling
 			for _, number := range strings.Split(numbers, ",") {
-				for _, numbers := range util.InnerPhoneNumbers.NumbersMap {
-					if _, ok := numbers[number]; ok {
+				for country, numbers := range util.InnerPhoneNumbers.NumbersMap {
+					if _, ok := numbers[number]; ok && countryCode != country {
 						util.InnerPhoneNumbers.DuplicateNumbers[number] = struct{}{}
 						break
 					}
 				}
 				tNumbersSet[number] = struct{}{}
 			}
+			glog.Infoln("Duplicated numbers", util.InnerPhoneNumbers.DuplicateNumbers)
 
 			util.InnerPhoneNumbers.NumbersMap[countryCode] = tNumbersSet
 			util.InnerPhoneNumbers.Unlock()

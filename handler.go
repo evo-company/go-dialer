@@ -33,7 +33,7 @@ func CdrEventHandler(m gami.Message) {
 	}
 
 	countryCode := util.GetCountryByPhones(innerPhoneNumber, opponentPhoneNumber)
-	if countryCode == "" {
+	if _, ok := conf.GetConf().Agencies[countryCode]; countryCode == "" || !ok {
 		glog.Errorln("Unexisting numbers...", innerPhoneNumber, opponentPhoneNumber,
 			countryCode)
 		return
