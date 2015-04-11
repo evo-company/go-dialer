@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"hash"
 	"net/http"
+	"os/exec"
 	"regexp"
 	"strings"
 	"sync"
@@ -28,7 +29,7 @@ const (
 	INNER_CALL
 	UNKNOWN_CALL
 	INCOMING_CALL_HIDDEN
-	TIME_FORMAT   = "2006-01-02 15:04:05"
+	TIME_FORMAT = "2006-01-02 15:04:05"
 )
 
 var PHONE_RE *regexp.Regexp
@@ -36,33 +37,28 @@ var InnerPhoneNumbers InnerPhones
 
 type InnerPhones struct {
 	DuplicateNumbers model.Set
-	NumbersMap map[string]model.Set
+	NumbersMap       map[string]model.Set
 	*sync.RWMutex
 }
 
 func LoadInnerNumbers(numbersChan chan<- []string) {
-	wg := sync.WaitGroup{}
 	for countryCode, settings := range conf.GetConf().Agencies {
-		wg.Add(1)
-		go func(countryCode string, settings model.CountrySettings, wg *sync.WaitGroup) {
+		go func(countryCode string, settings model.CountrySettings) {
 			url := conf.GetConf().GetApi(countryCode, "get_employees_inner_phone")
 			payload, _ := json.Marshal(model.Dict{"CompanyId": settings.CompanyId})
 
-			for i := 0; i < 10; i++ {
+			for i := 0; i < 5; i++ {
 				numbers, err := SendRequest(payload, url, "GET", settings.Secret,
 					settings.CompanyId)
 				if err == nil {
 					numbersChan <- []string{countryCode, numbers}
-					wg.Done()
 					return
 				}
 				glog.Errorln("Cannot load numbers", err)
 				time.Sleep(5 * time.Second)
 			}
-		}(countryCode, settings, &wg)
+		}(countryCode, settings)
 	}
-
-	wg.Wait()
 }
 
 type SafeCallsCache struct {
@@ -106,6 +102,20 @@ func ConvertTime(t string) string {
 	return tt.Add(timeZoneShift).Format(TIME_FORMAT)
 }
 
+func ConvertWAV2MP3(dirName, wavFileName, mp3FileName string) error {
+	lame := exec.Command("lame", "-h", "--add-id3v2", "-m", "m",
+		fmt.Sprintf("%s/%s", dirName, wavFileName),
+		fmt.Sprintf("%s/mp3/%s", dirName, mp3FileName))
+	if out, err := lame.CombinedOutput(); err != nil {
+		return errors.New(string(out))
+	}
+	return nil
+}
+
+func GetPhoneCallFileName(dialerName, uniqueId, exten string) string {
+	return fmt.Sprintf("%s-%s.%s", dialerName, uniqueId, exten)
+}
+
 func GetActiveQueuesMap(activeQueuesChan <-chan gami.Message) (
 	queuesNumberMap map[string]map[string][]string) {
 	queuesNumberMap = make(map[string]map[string][]string)
@@ -144,10 +154,9 @@ func ShowCallingPopup(innerPhoneNumber, callingPhone, country string) error {
 func GetCountryByPhones(innerPhoneNumber, opponentPhoneNumber string) (countryCode string) {
 	InnerPhoneNumbers.RLock()
 	defer InnerPhoneNumbers.RUnlock()
-
-//	If inner number is same for more than one portal it will be in separate structure
-//	And that means that we need to guess portal country by opponent number
-//	In other case just return country from map
+	//	If inner number is same for more than one portal it will be in separate structure
+	//	And that means that we need to guess portal country by opponent number
+	//	In other case just return country from map
 	if _, ok := InnerPhoneNumbers.DuplicateNumbers[innerPhoneNumber]; ok {
 		outerNumber := strings.TrimPrefix(opponentPhoneNumber, "+")
 		if outerNumber[:3] == "380" || (outerNumber[:1] == "0" && len(outerNumber) == 10) {
@@ -156,8 +165,8 @@ func GetCountryByPhones(innerPhoneNumber, opponentPhoneNumber string) (countryCo
 			countryCode = "kz"
 		} else if outerNumber[:2] == "80" || outerNumber[:3] == "375" {
 			countryCode = "by"
-		} else if (strings.Contains("78", outerNumber[:1]) &&
-			strings.Contains("3489", outerNumber[1:2])) {
+		} else if strings.Contains("78", outerNumber[:1]) &&
+			strings.Contains("3489", outerNumber[1:2]) {
 			countryCode = "ru"
 		}
 	} else {
@@ -188,7 +197,7 @@ func GetPhoneDetails(channel, destChannel, source, destination, callerId string)
 			return "", "", INNER_CALL
 		}
 	}
-	if in != nil {
+	if in != nil && len(destination) > 4 {
 		// If incoming channel contains inner number - just outgoing call
 		return in[1], destination, OUTGOING_CALL
 	}

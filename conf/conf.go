@@ -21,16 +21,19 @@ var manageQueues = flag.Bool("manage_queues", false,
 	"Set true to enable asterisk queue management")
 
 const (
-	REQUEST_TIMEOUT       = 5
-	CDR_READ_INTERVAL     = 30 * time.Second
-	QUEUE_RENEW_INTERVAL  = 10 * time.Minute
-	NUMBERS_LOAD_INTERVAL = 5 * time.Minute
-	REMOTE_ERROR_TEXT     = "Error on remote server, status code - %v"
-	CDR_DB_FILE           = "cdr_log.db"
-	MAX_CDR_NUMBER        = 50
-	CDR_SAVERS_COUNT      = 5
-	BOLT_CDR_BUCKET       = "CdrBucket"
-	AMI_RECONNECT_TIMEOUT = 5 * time.Second
+	REQUEST_TIMEOUT           = 5
+	CDR_READ_INTERVAL         = 30 * time.Second
+	QUEUE_RENEW_INTERVAL      = 10 * time.Minute
+	NUMBERS_LOAD_INTERVAL     = 5 * time.Minute
+	PHONE_CALLS_SAVE_INTERVAL = 10 * time.Second
+	REMOTE_ERROR_TEXT         = "Error on remote server, status code - %v"
+	CDR_DB_FILE               = "cdr_log.db"
+	MAX_CDR_NUMBER            = 50
+	MAX_PHONE_CALLS_NUMBER    = 10
+	CDR_SAVERS_COUNT          = 2
+	PHONE_CALL_SENDERS_COUNT  = 2
+	BOLT_CDR_BUCKET           = "CdrBucket"
+	AMI_RECONNECT_TIMEOUT     = 5 * time.Second
 )
 
 var conf Configuration
@@ -67,6 +70,7 @@ type Configuration struct {
 	TimeZone               int
 	SavePhoneCalls         bool
 	ManageQueues           bool
+	StorageSettings        map[string]string
 }
 
 func (c Configuration) GetApi(country string, apiKey string) string {

@@ -6,7 +6,6 @@ import (
 	"html/template"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/golang/glog"
 	"github.com/warik/gami"
@@ -27,8 +26,10 @@ func CdrEventHandler(m gami.Message) {
 	innerPhoneNumber, opponentPhoneNumber, callType := util.GetPhoneDetails(m["Channel"],
 		m["DestinationChannel"], m["Source"], m["Destination"], m["CallerID"])
 
+	glog.Infoln("<<< INCOMING CDR", m)
+
 	if callType == util.INNER_CALL || callType == -1 {
-		glog.Errorln("<<< BAD CDR", callType, m)
+		glog.Errorln("<<< BAD CDR", callType)
 		return
 	}
 
@@ -53,46 +54,34 @@ func CdrEventHandler(m gami.Message) {
 
 	_, err := db.GetDB().AddCDR(m)
 	if err != nil {
+		conf.Alert(err.Error())
 		glog.Errorln(err)
-		time.Sleep(10 * time.Second)
-		go CdrEventHandler(m)
-		return
 	}
 
-	glog.Infoln("<<< SAVED CDR", m["UniqueID"], m)
+	_, err = db.GetDB().AddPhoneCall(m["UniqueID"])
+	if err != nil {
+		conf.Alert(err.Error())
+		glog.Errorln(err)
+	}
+
+	glog.Infoln("<<< SAVED CDR", m["UniqueID"])
 }
 
-func PhoneCallsHandler(m gami.Message) {
+func PhoneCallRecordStarter(m gami.Message) {
+	// For one actual call we can have several bridge events depending on call type
+	// So we need to remember channel for which we already started MixMonitor
 	channel := m["Channel"]
 	callsCache.Lock()
 	defer callsCache.Unlock()
 	if _, ok := callsCache.Map[channel]; ok {
 		return
 	}
-	glog.Infoln(m)
 	callsCache.Map[channel] = struct{}{}
 
-	// If Channel2 field has inner number then its incoming call and we need to show popup
-	// t := util.PHONE_RE.FindStringSubmatch(m["Channel2"])
-	// if t != nil {
-	// 	innerPhoneNumber := t[1]
-	// 	country := util.GetCountryByInnerPhone(innerPhoneNumber)
-	// 	opponentPhoneNumber := m["CallerID1"]
-	// 	if country == "" {
-	// 		glog.Errorln("Unexisting numbers...", innerPhoneNumber, opponentPhoneNumber)
-	// 		return
-	// 	}
-	// 	glog.Infoln(fmt.Sprintf("Showing popup to: %s, %s", innerPhoneNumber, country))
-	// 	if err := util.ShowCallingPopup(innerPhoneNumber, opponentPhoneNumber,
-	// 		country); err != nil {
-	// 		glog.Errorln(err)
-	// 	}
-	// }
-
 	if conf.GetConf().SavePhoneCalls {
-		fileName := fmt.Sprintf("%s/%s-%s.wav", conf.GetConf().FolderForCalls, conf.GetConf().Name,
-			m["Uniqueid"])
-		res, err := ami.SendMixMonitor(m["Channel"], fileName)
+		fileName := util.GetPhoneCallFileName(conf.GetConf().Name, m["Uniqueid"], "wav")
+		fullFileName := fmt.Sprintf("%s/%s", conf.GetConf().FolderForCalls, fileName)
+		res, err := ami.SendMixMonitor(m["Channel"], fullFileName)
 		if err != nil {
 			glog.Errorln(err)
 		} else {
@@ -107,20 +96,20 @@ func PhoneCallsHandler(m gami.Message) {
 func Stats(w http.ResponseWriter, r *http.Request) {
 	page := `
 		<h1>{{.Name}} dialer stats</h1>
-		<b>DB CDR</b>: {{.Count}}
+		<b>DB CDR</b>: {{.DBCount}}
 	`
 	t, _ := template.New("stats").Parse(page)
-	stats := model.Stats{conf.GetConf().Name, db.GetDB().GetCount()}
+	stats := model.DialerStats{conf.GetConf().Name, db.GetDB().GetCount("cdr")}
 	t.Execute(w, stats)
 }
 
 func CdrCount(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, model.Response{"number_of_cdrs": strconv.Itoa(db.GetDB().GetCount())})
+	fmt.Fprint(w, model.Response{"number_of_cdrs": strconv.Itoa(db.GetDB().GetCount("cdr"))})
 }
 
 func DeleteCdr(p interface{}, w http.ResponseWriter, r *http.Request) {
 	cdr := (*p.(*model.Cdr))
-	res, err := db.GetDB().Delete(cdr.Id)
+	res, err := db.GetDB().Delete("cdr", cdr.Id)
 	if err != nil {
 		glog.Errorln(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -38,9 +38,9 @@ func (c Call) GetCallerID() string {
 	return fmt.Sprintf("call_from_CRM <%v>", c.Inline)
 }
 
-type Stats struct {
+type DialerStats struct {
 	Name string
-	Count int
+	DBCount int
 }
 
 type PhoneCall struct {

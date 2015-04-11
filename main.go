@@ -18,6 +18,7 @@ import (
 	"github.com/warik/go-dialer/conf"
 	"github.com/warik/go-dialer/db"
 	"github.com/warik/go-dialer/model"
+	_ "github.com/warik/go-dialer/s3"
 	"github.com/warik/go-dialer/util"
 )
 
@@ -36,8 +37,8 @@ func main() {
 		time.NewTicker(conf.NUMBERS_LOAD_INTERVAL))
 	util.LoadInnerNumbers(numbersChan)
 
-	// Saving in and out calls and showing popups
-	pch := PhoneCallsHandler
+	// PhoneCallRecordStarter initiates MixMonitor for call recording
+	pch := PhoneCallRecordStarter
 	ami.GetAMI().RegisterHandler("BridgeEnter", &pch)
 
 	// CdrEventHandler reads cdrs, processes them and stores in db for further sending to
@@ -45,7 +46,7 @@ func main() {
 	ceh := CdrEventHandler
 	ami.GetAMI().RegisterHandler("Cdr", &ceh)
 
-	// We need QueueMember handler for gather information about current queue occupations
+	// QueueMember handler gathers information about current queue occupations
 	// those events start to come after QueueStatus action will be sent
 	queueStatusChan := make(chan gami.Message, 1000)
 	qmh := func(m gami.Message) {
@@ -63,18 +64,41 @@ func main() {
 	}
 	ami.GetAMI().RegisterHandler("QueueStatusComplete", &qsch)
 
+	// --------------------------------
+	// --- Workers starting section ---
+	// --------------------------------
+	// CdrReader reads cdrs from db once in a while and sends them to CdrSender
 	finishChannels = append(finishChannels, make(chan struct{}))
 	wg.Add(1)
-	mChan := make(chan db.CDR, conf.MAX_CDR_NUMBER)
+	mChan := make(chan db.CDR, conf.MAX_CDR_NUMBER*2)
 	go CdrReader(&wg, mChan, finishChannels[len(finishChannels)-1],
 		time.NewTicker(conf.CDR_READ_INTERVAL))
 
+	// PhoneCallReader gets unique phone calls ids from db and sends them to PhoneCallSender
+	finishChannels = append(finishChannels, make(chan struct{}))
+	wg.Add(1)
+	pcChan := make(chan db.PhoneCall, conf.MAX_CDR_NUMBER*2)
+	go PhoneCallReader(&wg, pcChan, finishChannels[len(finishChannels)-1],
+		time.NewTicker(conf.PHONE_CALLS_SAVE_INTERVAL))
+
+	// PhoneCallSender gets phone call wav audio file by uniqueId, converts it to mp3 and sends to
+	// storage
+	for i := 0; i < conf.PHONE_CALL_SENDERS_COUNT; i++ {
+		finishChannels = append(finishChannels, make(chan struct{}))
+		wg.Add(1)
+		go PhoneCallSender(&wg, pcChan, finishChannels[len(finishChannels)-1], i+1)
+	}
+
+	// CdrSender tries to send cdr to related portal
+	// in case of success - deletes it from db
 	for i := 0; i < conf.CDR_SAVERS_COUNT; i++ {
 		finishChannels = append(finishChannels, make(chan struct{}))
 		wg.Add(1)
-		go CdrSaver(&wg, mChan, finishChannels[len(finishChannels)-1])
+		go CdrSender(&wg, mChan, finishChannels[len(finishChannels)-1], i+1)
 	}
 
+	// QueueManager does some heavy stuff on managing asterisk queues according to managers status
+	// and sends fresh data to portal, so the portal works only with local data
 	if conf.GetConf().ManageQueues {
 		finishChannels = append(finishChannels, make(chan struct{}))
 		wg.Add(1)

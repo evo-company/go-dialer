@@ -1,13 +1,11 @@
 package db
 
 import (
-	"fmt"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"sync"
-	"database/sql"
 
-	"github.com/golang/glog"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 
@@ -15,7 +13,7 @@ import (
 )
 
 const (
-	INSERT_STMT = `
+	INSERT_CDR_STMT = `
 		INSERT INTO cdr (
 			unique_id, inner_phone_number, opponent_phone_number, call_type, company_id, disposition,
 			start_time, billable_seconds, country_code
@@ -24,9 +22,10 @@ const (
 			:disposition, :start_time, :billable_seconds, :country_code
 		)
 	`
-	GET_STMT    = "SELECT * FROM cdr where unique_id=$1"
-	DELETE_STMT = "DELETE FROM cdr where id=:id"
-	COUNT_STMT  = "SELECT count(*) from cdr"
+	INSER_PC_STMT = `INSERT OR IGRNORE INTO phone_call (unique_id) VALUES (:unique_id)`
+	GET_STMT      = "SELECT * FROM cdr where unique_id=$1"
+	DELETE_STMT   = "DELETE FROM :table where id=:id"
+	COUNT_STMT    = "SELECT count(*) from $1"
 )
 
 type DBWrapper struct {
@@ -48,10 +47,15 @@ var schema = `
 		billable_seconds text not null,
 		country_code text  not null
 	);
+
+    CREATE TABLE IF NOT EXISTS phone_call (
+        id integer PRIMARY KEY AUTOINCREMENT,
+        unique_id text PRIMARY KEY
+    );
 `
 
 type CDR struct {
-	ID                  int `db:"id"`
+	ID                  int    `db:"id"`
 	UniqueID            string `db:"unique_id"`
 	InnerPhoneNumber    string `db:"inner_phone_number"`
 	OpponentPhoneNumber string `db:"opponent_phone_number"`
@@ -61,6 +65,11 @@ type CDR struct {
 	StartTime           string `db:"start_time"`
 	BillableSeconds     string `db:"billable_seconds"`
 	CountryCode         string `db:"country_code"`
+}
+
+type PhoneCall struct {
+	ID       int    `db:"id"`
+	UniqueID string `db:"unique_id"`
 }
 
 func (db *DBWrapper) AddCDR(m map[string]string) (sql.Result, error) {
@@ -77,7 +86,13 @@ func (db *DBWrapper) AddCDR(m map[string]string) (sql.Result, error) {
 	}
 	db.Lock()
 	defer db.Unlock()
-	return namedExec(INSERT_STMT, cdr)
+	return namedExec(INSERT_CDR_STMT, cdr)
+}
+
+func (db *DBWrapper) AddPhoneCall(uniqueId string) (sql.Result, error) {
+	db.Lock()
+	defer db.Unlock()
+	return namedExec(INSER_PC_STMT, PhoneCall{UniqueID: uniqueId})
 }
 
 func (db *DBWrapper) GetCDR(uniqueId string) (CDR, error) {
@@ -88,38 +103,55 @@ func (db *DBWrapper) GetCDR(uniqueId string) (CDR, error) {
 	return cdr, err
 }
 
-func (db *DBWrapper) Delete(id int) (sql.Result, error) {
+func (db *DBWrapper) Delete(table string, id int) (sql.Result, error) {
 	db.Lock()
 	defer db.Unlock()
-	return namedExec(DELETE_STMT, map[string]interface{}{"id": id})
+	return namedExec(DELETE_STMT, map[string]interface{}{"table": table, "id": id})
 }
 
-func (db *DBWrapper) GetCount() (result int) {
+func (db *DBWrapper) GetCount(table string) (result int) {
 	db.Lock()
-	db.Unlock()
-	db.Get(&result, COUNT_STMT)
+	defer db.Unlock()
+	db.Get(&result, COUNT_STMT, table)
 	return
 }
 
-func (db *DBWrapper) SelectCDRs(limit int) (cdrs []CDR, err error) {
+func (db *DBWrapper) SelectCDRs(limit int) ([]CDR, error) {
 	db.Lock()
 	defer db.Unlock()
-	cdrs = []CDR{}
+	cdrs := []CDR{}
 	rows, err := db.Queryx("SELECT * FROM cdr order by id desc limit $1", limit)
 	if err != nil {
-		return
+		return nil, err
 	}
 	for rows.Next() {
 		cdr := CDR{}
-		err := rows.StructScan(&cdr)
-		if err != nil {
-			glog.Errorln(err)
-			conf.Alert(fmt.Sprintf("Cannot read from db | %s", err))
+		if err := rows.StructScan(&cdr); err != nil {
+			return nil, err
 		} else {
 			cdrs = append(cdrs, cdr)
 		}
 	}
-	return
+	return cdrs, nil
+}
+
+func (db *DBWrapper) SelectPhoneCalls(limit int) ([]PhoneCall, error) {
+	db.Lock()
+	defer db.Unlock()
+	phoneCalls := []PhoneCall{}
+	rows, err := db.Queryx("SELECT * FROM phone_call order by 1 desc limit $1", limit)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		phoneCall := PhoneCall{}
+		if err := rows.StructScan(&phoneCall); err != nil {
+			return nil, err
+		} else {
+			phoneCalls = append(phoneCalls, phoneCall)
+		}
+	}
+	return phoneCalls, nil
 }
 
 func GetDB() *DBWrapper {
