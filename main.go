@@ -28,6 +28,11 @@ func init() {
 }
 
 func main() {
+	// --------------------------------
+	// --- Workers starting section ---
+	// --------------------------------
+
+	// CdrReader reads cdrs from db once in a while and sends them to CdrSender
 	wg := sync.WaitGroup{}
 	finishChannels := []chan struct{}{make(chan struct{})}
 
@@ -37,37 +42,6 @@ func main() {
 		time.NewTicker(conf.NUMBERS_LOAD_INTERVAL))
 	util.LoadInnerNumbers(numbersChan)
 
-	// PhoneCallRecordStarter initiates MixMonitor for call recording
-	pch := PhoneCallRecordStarter
-	ami.GetAMI().RegisterHandler("BridgeEnter", &pch)
-
-	// CdrEventHandler reads cdrs, processes them and stores in db for further sending to
-	// corresponding portals
-	ceh := CdrEventHandler
-	ami.GetAMI().RegisterHandler("Cdr", &ceh)
-
-	// QueueMember handler gathers information about current queue occupations
-	// those events start to come after QueueStatus action will be sent
-	queueStatusChan := make(chan gami.Message, 1000)
-	qmh := func(m gami.Message) {
-		if strings.HasPrefix(m["Name"], "Local") {
-			queueStatusChan <- m
-		}
-	}
-	ami.GetAMI().RegisterHandler("QueueMember", &qmh)
-
-	// QueueStatusComplete tells us that queueMember events were sent, so we can send this
-	// info to queueManager and use for determination of managers states in queues
-	queueTransport := make(chan chan gami.Message)
-	qsch := func(m gami.Message) {
-		queueTransport <- queueStatusChan
-	}
-	ami.GetAMI().RegisterHandler("QueueStatusComplete", &qsch)
-
-	// --------------------------------
-	// --- Workers starting section ---
-	// --------------------------------
-	// CdrReader reads cdrs from db once in a while and sends them to CdrSender
 	finishChannels = append(finishChannels, make(chan struct{}))
 	wg.Add(1)
 	mChan := make(chan db.CDR, conf.MAX_CDR_NUMBER*2)
@@ -99,12 +73,43 @@ func main() {
 
 	// QueueManager does some heavy stuff on managing asterisk queues according to managers status
 	// and sends fresh data to portal, so the portal works only with local data
+	queueTransport := make(chan chan gami.Message)
 	if conf.GetConf().ManageQueues {
 		finishChannels = append(finishChannels, make(chan struct{}))
 		wg.Add(1)
 		go QueueManager(&wg, queueTransport, finishChannels[len(finishChannels)-1],
 			time.NewTicker(conf.QUEUE_RENEW_INTERVAL))
 	}
+
+	// ------------------------------------
+	// --- Handlers registering section ---
+	// ------------------------------------
+
+	// PhoneCallRecordStarter initiates MixMonitor for call recording
+	pch := PhoneCallRecordStarter
+	ami.GetAMI().RegisterHandler("BridgeEnter", &pch)
+
+	// CdrEventHandler reads cdrs, processes them and stores in db for further sending to
+	// corresponding portals
+	ceh := CdrEventHandler
+	ami.GetAMI().RegisterHandler("Cdr", &ceh)
+
+	// QueueMember handler gathers information about current queue occupations
+	// those events start to come after QueueStatus action will be sent
+	queueStatusChan := make(chan gami.Message, 1000)
+	qmh := func(m gami.Message) {
+		if strings.HasPrefix(m["Name"], "Local") {
+			queueStatusChan <- m
+		}
+	}
+	ami.GetAMI().RegisterHandler("QueueMember", &qmh)
+
+	// QueueStatusComplete tells us that queueMember events were sent, so we can send this
+	// info to queueManager and use for determination of managers states in queues
+	qsch := func(m gami.Message) {
+		queueTransport <- queueStatusChan
+	}
+	ami.GetAMI().RegisterHandler("QueueStatusComplete", &qsch)
 
 	initRoutes()
 	goji.Serve()

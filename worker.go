@@ -126,6 +126,8 @@ func PhoneCallSender(wg *sync.WaitGroup, pcChan <-chan db.PhoneCall, finishChan 
 			wavFileName := util.GetPhoneCallFileName(dialerName, phoneCall.UniqueID, "wav")
 			mp3FileName := util.GetPhoneCallFileName(dialerName, phoneCall.UniqueID, "mp3")
 
+			glog.Infoln("<<< Processing Phone Call", wavFileName)
+
 			err := util.ConvertWAV2MP3(dirName, wavFileName, mp3FileName)
 			if err != nil {
 				glog.Errorln(err)

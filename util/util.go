@@ -105,7 +105,7 @@ func ConvertTime(t string) string {
 func ConvertWAV2MP3(dirName, wavFileName, mp3FileName string) error {
 	lame := exec.Command("lame", "-h", "--add-id3v2", "-m", "m",
 		fmt.Sprintf("%s/%s", dirName, wavFileName),
-		fmt.Sprintf("%s/mp3/%s", dirName, mp3FileName))
+		fmt.Sprintf("%s_mp3/%s", dirName, mp3FileName))
 	if out, err := lame.CombinedOutput(); err != nil {
 		return errors.New(string(out))
 	}

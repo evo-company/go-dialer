@@ -22,7 +22,7 @@ const (
 			:disposition, :start_time, :billable_seconds, :country_code
 		)
 	`
-	INSER_PC_STMT = `INSERT OR IGRNORE INTO phone_call (unique_id) VALUES (:unique_id)`
+	INSER_PC_STMT = `INSERT OR IGNORE INTO phone_call (unique_id) VALUES (:unique_id)`
 	GET_STMT      = "SELECT * FROM cdr where unique_id=$1"
 	DELETE_STMT   = "DELETE FROM :table where id=:id"
 	COUNT_STMT    = "SELECT count(*) from $1"
@@ -50,7 +50,7 @@ var schema = `
 
     CREATE TABLE IF NOT EXISTS phone_call (
         id integer PRIMARY KEY AUTOINCREMENT,
-        unique_id text PRIMARY KEY
+        unique_id text UNIQUE
     );
 `
 

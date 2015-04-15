@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mitchellh/goamz/aws"
-	"github.com/mitchellh/goamz/s3"
+	"github.com/goamz/goamz/aws"
+	"github.com/goamz/goamz/s3"
 
 	"github.com/warik/go-dialer/conf"
 )
@@ -21,17 +21,22 @@ func Store(filePath, fileName string) error {
 	if _, err := file.Read(data); err != nil {
 		return err
 	}
-	return bucket.Put("", data, "audio/mpeg", s3.Private)
+	return bucket.Put(fileName, data, "audio/mpeg", s3.Private, s3.Options{})
 }
 
 func init() {
 	accessKey := conf.GetConf().StorageSettings["accessKey"]
 	secretKey := conf.GetConf().StorageSettings["secretKey"]
-	bucketName := conf.GetConf().StorageSettings["bucketName"]
-	auth, err := aws.GetAuth(accessKey, secretKey)
-	if err != nil {
-		panic(err)
+	s3Host := conf.GetConf().StorageSettings["s3Host"]
+	auth := aws.Auth{AccessKey: accessKey, SecretKey: secretKey}
+	region := aws.Region{
+		Name:       fmt.Sprintf("%s-dialer-calls", conf.GetConf().Name),
+		S3Endpoint: s3Host,
 	}
-	client := s3.New(auth, aws.EUCentral)
-	bucket = client.Bucket(bucketName)
+	client := s3.New(auth, region)
+	dialerName := conf.GetConf().Name
+	if dialerName == "" {
+		dialerName = "main"
+	}
+	bucket = client.Bucket(fmt.Sprintf("s3://%s/calls", dialerName))
 }
