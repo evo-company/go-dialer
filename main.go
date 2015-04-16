@@ -23,10 +23,12 @@ import (
 )
 
 var savePhoneCalls bool
+var sendCalls bool
 var manageQueues bool
 
 func init() {
 	flag.BoolVar(&savePhoneCalls, "save_calls", false, "Set true to save phone calls")
+	flag.BoolVar(&sendCalls, "send_calls", false, "Set true to convert and send phone calls")
 	flag.BoolVar(&manageQueues, "manage_queues", false,
 		"Set true to enable asterisk queue management")
 
@@ -40,10 +42,6 @@ func init() {
 }
 
 func main() {
-	// --------------------------------
-	// --- Workers starting section ---
-	// --------------------------------
-
 	// CdrReader reads cdrs from db once in a while and sends them to CdrSender
 	wg := sync.WaitGroup{}
 	finishChannels := []chan struct{}{make(chan struct{})}
@@ -60,21 +58,6 @@ func main() {
 	go CdrReader(&wg, mChan, finishChannels[len(finishChannels)-1],
 		time.NewTicker(conf.CDR_READ_INTERVAL))
 
-	// PhoneCallReader gets unique phone calls ids from db and sends them to PhoneCallSender
-	finishChannels = append(finishChannels, make(chan struct{}))
-	wg.Add(1)
-	pcChan := make(chan db.PhoneCall, conf.MAX_CDR_NUMBER*2)
-	go PhoneCallReader(&wg, pcChan, finishChannels[len(finishChannels)-1],
-		time.NewTicker(conf.PHONE_CALLS_SAVE_INTERVAL))
-
-	// PhoneCallSender gets phone call wav audio file by uniqueId, converts it to mp3 and sends to
-	// storage
-	for i := 0; i < conf.PHONE_CALL_SENDERS_COUNT; i++ {
-		finishChannels = append(finishChannels, make(chan struct{}))
-		wg.Add(1)
-		go PhoneCallSender(&wg, pcChan, finishChannels[len(finishChannels)-1], i+1)
-	}
-
 	// CdrSender tries to send cdr to related portal
 	// in case of success - deletes it from db
 	for i := 0; i < conf.CDR_SAVERS_COUNT; i++ {
@@ -83,45 +66,60 @@ func main() {
 		go CdrSender(&wg, mChan, finishChannels[len(finishChannels)-1], i+1)
 	}
 
-	// QueueManager does some heavy stuff on managing asterisk queues according to managers status
-	// and sends fresh data to portal, so the portal works only with local data
-	queueTransport := make(chan chan gami.Message)
+	if sendCalls {
+		// PhoneCallReader gets unique phone calls ids from db and sends them to PhoneCallSender
+		finishChannels = append(finishChannels, make(chan struct{}))
+		wg.Add(1)
+		pcChan := make(chan db.PhoneCall, conf.MAX_CDR_NUMBER*2)
+		go PhoneCallReader(&wg, pcChan, finishChannels[len(finishChannels)-1],
+			time.NewTicker(conf.PHONE_CALLS_SAVE_INTERVAL))
+
+		// PhoneCallSender gets phone call wav audio file by uniqueId, converts it to mp3 and sends to
+		// storage
+		for i := 0; i < conf.PHONE_CALL_SENDERS_COUNT; i++ {
+			finishChannels = append(finishChannels, make(chan struct{}))
+			wg.Add(1)
+			go PhoneCallSender(&wg, pcChan, finishChannels[len(finishChannels)-1], i+1)
+		}
+	}
+
 	if manageQueues {
+		queueTransport := make(chan chan gami.Message)
+		// QueueMember handler gathers information about current queue occupations
+		// those events start to come after QueueStatus action will be sent
+		queueStatusChan := make(chan gami.Message, 1000)
+		qmh := func(m gami.Message) {
+			if strings.HasPrefix(m["Name"], "Local") {
+				queueStatusChan <- m
+			}
+		}
+		ami.GetAMI().RegisterHandler("QueueMember", &qmh)
+
+		// QueueStatusComplete tells us that queueMember events were sent, so we can send this
+		// info to queueManager and use for determination of managers states in queues
+		qsch := func(m gami.Message) {
+			queueTransport <- queueStatusChan
+		}
+		ami.GetAMI().RegisterHandler("QueueStatusComplete", &qsch)
+
+		// QueueManager does some heavy stuff on managing asterisk queues according to managers
+		// status and sends fresh data to portal, so the portal works only with local data
 		finishChannels = append(finishChannels, make(chan struct{}))
 		wg.Add(1)
 		go QueueManager(&wg, queueTransport, finishChannels[len(finishChannels)-1],
 			time.NewTicker(conf.QUEUE_RENEW_INTERVAL))
 	}
 
-	// ------------------------------------
-	// --- Handlers registering section ---
-	// ------------------------------------
-
-	// PhoneCallRecordStarter initiates MixMonitor for call recording
-	pch := PhoneCallRecordStarter
-	ami.GetAMI().RegisterHandler("BridgeEnter", &pch)
+	if savePhoneCalls {
+		// PhoneCallRecordStarter initiates MixMonitor for call recording
+		pch := PhoneCallRecordStarter
+		ami.GetAMI().RegisterHandler("BridgeEnter", &pch)
+	}
 
 	// CdrEventHandler reads cdrs, processes them and stores in db for further sending to
 	// corresponding portals
 	ceh := CdrEventHandler
 	ami.GetAMI().RegisterHandler("Cdr", &ceh)
-
-	// QueueMember handler gathers information about current queue occupations
-	// those events start to come after QueueStatus action will be sent
-	queueStatusChan := make(chan gami.Message, 1000)
-	qmh := func(m gami.Message) {
-		if strings.HasPrefix(m["Name"], "Local") {
-			queueStatusChan <- m
-		}
-	}
-	ami.GetAMI().RegisterHandler("QueueMember", &qmh)
-
-	// QueueStatusComplete tells us that queueMember events were sent, so we can send this
-	// info to queueManager and use for determination of managers states in queues
-	qsch := func(m gami.Message) {
-		queueTransport <- queueStatusChan
-	}
-	ami.GetAMI().RegisterHandler("QueueStatusComplete", &qsch)
 
 	initRoutes()
 	goji.Serve()
