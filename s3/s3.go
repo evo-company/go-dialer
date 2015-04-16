@@ -14,7 +14,7 @@ var bucket *s3.Bucket
 
 func Store(filePath, fileName string) error {
 	var data []byte
-	file, err := os.Open(fmt.Sprintf("%s/mp3/%s", filePath, fileName))
+	file, err := os.Open(fmt.Sprintf("%s_mp3/%s", filePath, fileName))
 	if err != nil {
 		return err
 	}
