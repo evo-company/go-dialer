@@ -2,7 +2,7 @@ package s3
 
 import (
 	"fmt"
-	"os"
+	"io/ioutil"
 
 	"github.com/goamz/goamz/aws"
 	"github.com/goamz/goamz/s3"
@@ -13,12 +13,8 @@ import (
 var bucket *s3.Bucket
 
 func Store(filePath, fileName string) error {
-	var data []byte
-	file, err := os.Open(fmt.Sprintf("%s_mp3/%s", filePath, fileName))
+	data, err := ioutil.ReadFile(fmt.Sprintf("%s_mp3/%s", filePath, fileName))
 	if err != nil {
-		return err
-	}
-	if _, err := file.Read(data); err != nil {
 		return err
 	}
 	return bucket.Put(fileName, data, "audio/mpeg", s3.Private, s3.Options{})

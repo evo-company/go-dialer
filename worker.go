@@ -35,12 +35,13 @@ func CdrReader(wg *sync.WaitGroup, mChan chan<- db.CDR, finishChan <-chan struct
 				glog.Errorln(err)
 				continue
 			}
+			dbCount := db.GetDB().GetCdrCount()
+			glog.Infoln(fmt.Sprintf("<<< READING CDRS | DB: %d | PROCESS: %d", dbCount, len(cdrs)))
+
 			for _, cdr := range cdrs {
 				mChan <- cdr
 			}
 
-			dbCount := db.GetDB().GetCdrCount()
-			glog.Infoln(fmt.Sprintf("<<< READING CDRS | DB: %d | PROCESS: %d", dbCount, len(cdrs)))
 			if dbCount >= 2*conf.MAX_CDR_NUMBER {
 				conf.Alert(fmt.Sprintf("Overload with cdr, %d", dbCount))
 			}
@@ -95,15 +96,16 @@ func PhoneCallReader(wg *sync.WaitGroup, pcChan chan<- db.PhoneCall, finishChan 
 				glog.Errorln(err)
 				continue
 			}
+			dbCount := db.GetDB().GetPhoneCallCount()
+			glog.Infoln(fmt.Sprintf("<<< READING PHONE_CALLS | DB: %d | PROCESS: %d", dbCount,
+				len(phoneCalls)))
+
 			for _, phoneCall := range phoneCalls {
 				pcChan <- phoneCall
 			}
 
-			dbCount := db.GetDB().GetPhoneCallCount()
-			glog.Infoln(fmt.Sprintf("<<< READING PHONE_CALLS | DB: %d | PROCESS: %d", dbCount,
-				len(phoneCalls)))
 			if dbCount >= 2*conf.MAX_PHONE_CALLS_NUMBER {
-				conf.Alert(fmt.Sprintf("Overload with cdr, %d", dbCount))
+				conf.Alert(fmt.Sprintf("Overload with phone calls, %d", dbCount))
 			}
 		}
 	}
