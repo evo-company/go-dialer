@@ -14,12 +14,6 @@ import (
 	"github.com/warik/go-dialer/model"
 )
 
-var config = flag.String("config", "conf.json", "Config file name")
-var smsAlerts = flag.Bool("sms_alerts", true, "Should send sms in emergency cases")
-var savePhoneCalls = flag.Bool("save_calls", false, "Set true to save phone calls")
-var manageQueues = flag.Bool("manage_queues", false,
-	"Set true to enable asterisk queue management")
-
 const (
 	REQUEST_TIMEOUT           = 5
 	CDR_READ_INTERVAL         = 30 * time.Second
@@ -37,6 +31,8 @@ const (
 )
 
 var conf Configuration
+var smsAlerts bool
+var config string
 
 type PortalMap map[string]string
 
@@ -68,8 +64,6 @@ type Configuration struct {
 	AllowedRemoteAddrs     []string
 	Agencies               map[string]model.CountrySettings
 	TimeZone               int
-	SavePhoneCalls         bool
-	ManageQueues           bool
 	StorageSettings        map[string]string
 }
 
@@ -77,21 +71,19 @@ func (c Configuration) GetApi(country string, apiKey string) string {
 	return PORTAL_MAP[conf.Target][country] + c.Api + apiKey
 }
 
-func initConf(confFile string) Configuration {
+func InitConf() {
 	path, _ := filepath.Abs(filepath.Dir(os.Args[0]))
-	file, err := os.Open(filepath.Join(path, confFile))
+	file, err := os.Open(filepath.Join(path, config))
 	if err != nil {
 		panic(err)
 	}
 	defer file.Close()
 
-	conf := Configuration{}
+	conf = Configuration{}
 	err = json.NewDecoder(file).Decode(&conf)
 	if err != nil {
 		panic(err)
 	}
-	conf.SavePhoneCalls, conf.ManageQueues = *savePhoneCalls, *manageQueues
-	return conf
 }
 
 func GetConf() *Configuration {
@@ -99,7 +91,7 @@ func GetConf() *Configuration {
 }
 
 func Alert(msg string) {
-	if !*smsAlerts {
+	if !smsAlerts {
 		return
 	}
 	url := "http://sms.skysms.net/api/submit_sm"
@@ -117,6 +109,6 @@ func Alert(msg string) {
 }
 
 func init() {
-	flag.Parse()
-	conf = initConf(*config)
+	flag.StringVar(&config, "config", "conf.json", "Config file name")
+	flag.BoolVar(&smsAlerts, "sms_alerts", true, "Should send sms in emergency cases")
 }

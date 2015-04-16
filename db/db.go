@@ -168,13 +168,9 @@ func namedExec(stmt string, arg interface{}) (sql.Result, error) {
 	return res, err
 }
 
-func initDB() (db *sqlx.DB) {
+func InitDB() {
 	path, _ := filepath.Abs(filepath.Dir(os.Args[0]))
-	db = sqlx.MustConnect("sqlite3", filepath.Join(path, conf.CDR_DB_FILE))
-	db.MustExec(schema)
-	return
-}
-
-func init() {
-	db = &DBWrapper{initDB(), new(sync.RWMutex)}
+	connector := sqlx.MustConnect("sqlite3", filepath.Join(path, conf.CDR_DB_FILE))
+	connector.MustExec(schema)
+	db = &DBWrapper{connector, new(sync.RWMutex)}
 }

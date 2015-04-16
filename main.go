@@ -18,12 +18,24 @@ import (
 	"github.com/warik/go-dialer/conf"
 	"github.com/warik/go-dialer/db"
 	"github.com/warik/go-dialer/model"
-	_ "github.com/warik/go-dialer/s3"
+	"github.com/warik/go-dialer/s3"
 	"github.com/warik/go-dialer/util"
 )
 
+var savePhoneCalls bool
+var manageQueues bool
+
 func init() {
+	flag.BoolVar(&savePhoneCalls, "save_calls", false, "Set true to save phone calls")
+	flag.BoolVar(&manageQueues, "manage_queues", false,
+		"Set true to enable asterisk queue management")
+
 	flag.Parse()
+	conf.InitConf()
+	ami.InitAmi()
+	db.InitDB()
+	s3.InitS3()
+
 	runtime.GOMAXPROCS(runtime.NumCPU())
 }
 
@@ -74,7 +86,7 @@ func main() {
 	// QueueManager does some heavy stuff on managing asterisk queues according to managers status
 	// and sends fresh data to portal, so the portal works only with local data
 	queueTransport := make(chan chan gami.Message)
-	if conf.GetConf().ManageQueues {
+	if manageQueues {
 		finishChannels = append(finishChannels, make(chan struct{}))
 		wg.Add(1)
 		go QueueManager(&wg, queueTransport, finishChannels[len(finishChannels)-1],

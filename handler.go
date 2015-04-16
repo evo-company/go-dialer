@@ -78,7 +78,7 @@ func PhoneCallRecordStarter(m gami.Message) {
 	}
 	callsCache.Map[channel] = struct{}{}
 
-	if conf.GetConf().SavePhoneCalls {
+	if savePhoneCalls {
 		fileName := util.GetPhoneCallFileName(conf.GetConf().Name, m["Uniqueid"], "wav")
 		fullFileName := fmt.Sprintf("%s/%s", conf.GetConf().FolderForCalls, fileName)
 		res, err := ami.SendMixMonitor(m["Channel"], fullFileName)

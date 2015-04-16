@@ -14,7 +14,7 @@ var bucket *s3.Bucket
 
 func Store(filePath, fileName string) error {
 	var data []byte
-	file, err := os.Open(fmt.Sprint("%s/mp3/%s", filePath, fileName))
+	file, err := os.Open(fmt.Sprintf("%s/mp3/%s", filePath, fileName))
 	if err != nil {
 		return err
 	}
@@ -24,19 +24,23 @@ func Store(filePath, fileName string) error {
 	return bucket.Put(fileName, data, "audio/mpeg", s3.Private, s3.Options{})
 }
 
-func init() {
+func InitS3() {
 	accessKey := conf.GetConf().StorageSettings["accessKey"]
 	secretKey := conf.GetConf().StorageSettings["secretKey"]
 	s3Host := conf.GetConf().StorageSettings["s3Host"]
-	auth := aws.Auth{AccessKey: accessKey, SecretKey: secretKey}
-	region := aws.Region{
-		Name:       fmt.Sprintf("%s-dialer-calls", conf.GetConf().Name),
-		S3Endpoint: s3Host,
-	}
-	client := s3.New(auth, region)
 	dialerName := conf.GetConf().Name
+	auth := aws.Auth{AccessKey: accessKey, SecretKey: secretKey}
 	if dialerName == "" {
 		dialerName = "main"
 	}
-	bucket = client.Bucket(fmt.Sprintf("s3://%s/calls", dialerName))
+	region := aws.Region{
+		Name:       fmt.Sprintf("%s-dialer-calls", dialerName),
+		S3Endpoint: s3Host,
+	}
+	client := s3.New(auth, region)
+	bucket = client.Bucket(fmt.Sprintf("calls/%s", dialerName))
+	err := bucket.PutBucket(s3.Private)
+	if err != nil {
+		panic(err)
+	}
 }

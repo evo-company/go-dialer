@@ -152,7 +152,7 @@ func Call(call model.Call) (gami.Message, error) {
 	return sender(o)
 }
 
-func init() {
+func InitAmi() {
 	conf := conf.GetConf()
 	ami = startAmi(conf.AsteriskHost, conf.AMILogin, conf.AMIPassword)
 }
