@@ -26,7 +26,8 @@ const (
 	GET_STMT        = "SELECT * FROM cdr where unique_id=$1"
 	DELETE_PC_STMT  = "DELETE FROM phone_call where id=:id"
 	DELETE_CDR_STMT = "DELETE FROM cdr where id=:id"
-	COUNT_STMT      = "SELECT count(*) from $1"
+	COUNT_CDR_STMT  = "SELECT count(*) from cdr"
+	COUNT_PC_STMT   = "SELECT count(*) from phone_call"
 )
 
 type DBWrapper struct {
@@ -116,10 +117,17 @@ func (db *DBWrapper) DeletePhoneCall(id int) (sql.Result, error) {
 	return namedExec(DELETE_PC_STMT, map[string]interface{}{"id": id})
 }
 
-func (db *DBWrapper) GetCount(table string) (result int) {
+func (db *DBWrapper) GetCdrCount() (result int) {
 	db.Lock()
 	defer db.Unlock()
-	db.Get(&result, COUNT_STMT, table)
+	db.Get(&result, COUNT_CDR_STMT)
+	return
+}
+
+func (db *DBWrapper) GetPhoneCallCount() (result int) {
+	db.Lock()
+	defer db.Unlock()
+	db.Get(&result, COUNT_PC_STMT)
 	return
 }
 

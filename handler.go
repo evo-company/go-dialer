@@ -57,6 +57,12 @@ func CdrEventHandler(m gami.Message) {
 		conf.Alert(err.Error())
 		glog.Errorln(err)
 	}
+	glog.Infoln("<<< SAVED CDR", m["UniqueID"])
+
+	sec, _ := strconv.Atoi(m["BillableSeconds"])
+	if sec == 0 {
+		return
+	}
 
 	_, err = db.GetDB().AddPhoneCall(m["UniqueID"])
 	if err != nil {
@@ -64,7 +70,6 @@ func CdrEventHandler(m gami.Message) {
 		glog.Errorln(err)
 	}
 
-	glog.Infoln("<<< SAVED CDR", m["UniqueID"])
 }
 
 func PhoneCallRecordStarter(m gami.Message) {
@@ -99,12 +104,12 @@ func Stats(w http.ResponseWriter, r *http.Request) {
 		<b>DB CDR</b>: {{.DBCount}}
 	`
 	t, _ := template.New("stats").Parse(page)
-	stats := model.DialerStats{conf.GetConf().Name, db.GetDB().GetCount("cdr")}
+	stats := model.DialerStats{conf.GetConf().Name, db.GetDB().GetCdrCount()}
 	t.Execute(w, stats)
 }
 
 func CdrCount(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, model.Response{"number_of_cdrs": strconv.Itoa(db.GetDB().GetCount("cdr"))})
+	fmt.Fprint(w, model.Response{"number_of_cdrs": strconv.Itoa(db.GetDB().GetCdrCount())})
 }
 
 func DeleteCdr(p interface{}, w http.ResponseWriter, r *http.Request) {
