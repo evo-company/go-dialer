@@ -109,7 +109,7 @@ func CdrCount(w http.ResponseWriter, r *http.Request) {
 
 func DeleteCdr(p interface{}, w http.ResponseWriter, r *http.Request) {
 	cdr := (*p.(*model.Cdr))
-	res, err := db.GetDB().Delete("cdr", cdr.Id)
+	res, err := db.GetDB().DeleteCdr(cdr.Id)
 	if err != nil {
 		glog.Errorln(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

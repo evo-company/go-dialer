@@ -22,10 +22,11 @@ const (
 			:disposition, :start_time, :billable_seconds, :country_code
 		)
 	`
-	INSER_PC_STMT = `INSERT OR IGNORE INTO phone_call (unique_id) VALUES (:unique_id)`
-	GET_STMT      = "SELECT * FROM cdr where unique_id=$1"
-	DELETE_STMT   = "DELETE FROM :table where id=:id"
-	COUNT_STMT    = "SELECT count(*) from $1"
+	INSER_PC_STMT   = "INSERT OR IGNORE INTO phone_call (unique_id) VALUES (:unique_id)"
+	GET_STMT        = "SELECT * FROM cdr where unique_id=$1"
+	DELETE_PC_STMT  = "DELETE FROM phone_call where id=:id"
+	DELETE_CDR_STMT = "DELETE FROM cdr where id=:id"
+	COUNT_STMT      = "SELECT count(*) from $1"
 )
 
 type DBWrapper struct {
@@ -103,10 +104,16 @@ func (db *DBWrapper) GetCDR(uniqueId string) (CDR, error) {
 	return cdr, err
 }
 
-func (db *DBWrapper) Delete(table string, id int) (sql.Result, error) {
+func (db *DBWrapper) DeleteCdr(id int) (sql.Result, error) {
 	db.Lock()
 	defer db.Unlock()
-	return namedExec(DELETE_STMT, map[string]interface{}{"table": table, "id": id})
+	return namedExec(DELETE_CDR_STMT, map[string]interface{}{"id": id})
+}
+
+func (db *DBWrapper) DeletePhoneCall(id int) (sql.Result, error) {
+	db.Lock()
+	defer db.Unlock()
+	return namedExec(DELETE_PC_STMT, map[string]interface{}{"id": id})
 }
 
 func (db *DBWrapper) GetCount(table string) (result int) {
