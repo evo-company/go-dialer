@@ -24,6 +24,7 @@ func InitS3() {
 	accessKey := conf.GetConf().StorageSettings["accessKey"]
 	secretKey := conf.GetConf().StorageSettings["secretKey"]
 	s3Host := conf.GetConf().StorageSettings["s3Host"]
+	baseBucket := conf.GetConf().StorageSettings["bucket"]
 	dialerName := conf.GetConf().Name
 	auth := aws.Auth{AccessKey: accessKey, SecretKey: secretKey}
 	if dialerName == "" {
@@ -34,7 +35,7 @@ func InitS3() {
 		S3Endpoint: s3Host,
 	}
 	client := s3.New(auth, region)
-	bucket = client.Bucket(fmt.Sprintf("calls/%s", dialerName))
+	bucket = client.Bucket(fmt.Sprintf("%s/%s", baseBucket, dialerName))
 	err := bucket.PutBucket(s3.Private)
 	if err != nil {
 		panic(err)
