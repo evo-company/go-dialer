@@ -36,7 +36,10 @@ func init() {
 	conf.InitConf()
 	ami.InitAmi()
 	db.InitDB()
-	s3.InitS3()
+
+	if sendCalls {
+		s3.InitS3()
+	}
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 }

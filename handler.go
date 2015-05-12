@@ -60,7 +60,7 @@ func CdrEventHandler(m gami.Message) {
 	glog.Infoln("<<< SAVED CDR", m["UniqueID"])
 
 	sec, _ := strconv.Atoi(m["BillableSeconds"])
-	if sec == 0 {
+	if sec == 0 || m["Disposition"] != "ANSWERED" {
 		return
 	}
 
