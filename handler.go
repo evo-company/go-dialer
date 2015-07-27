@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/golang/glog"
 	"github.com/warik/gami"
@@ -60,7 +61,8 @@ func CdrEventHandler(m gami.Message) {
 	glog.Infoln("<<< SAVED CDR", m["UniqueID"])
 
 	sec, _ := strconv.Atoi(m["BillableSeconds"])
-	if sec == 0 || m["Disposition"] != "ANSWERED" {
+	badCallFromCRM := strings.Contains(m["CallerID"], "call_from_CRM") && sec < 10
+	if sec == 0 || m["Disposition"] != "ANSWERED" || badCallFromCRM {
 		return
 	}
 
