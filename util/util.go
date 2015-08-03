@@ -32,9 +32,11 @@ const (
 	TIME_FORMAT = "2006-01-02 15:04:05"
 )
 
-var PHONE_RE *regexp.Regexp
-var InnerPhoneNumbers InnerPhones
-var callbackCdrCache = NewSafeMap()
+var (
+	PHONE_RE          *regexp.Regexp
+	InnerPhoneNumbers InnerPhones
+	callbackCdrCache  = NewSafeMap()
+)
 
 type InnerPhones struct {
 	DuplicateNumbers model.Set
@@ -337,6 +339,5 @@ func SendRequest(payload []byte, url, method, secret, companyId string) (string,
 
 func init() {
 	PHONE_RE, _ = regexp.Compile("^\\w+/(\\d{2,4}|\\d{4}\\w{2})\\D*-.+$")
-
 	InnerPhoneNumbers = InnerPhones{model.Set{}, map[string]model.Set{}, new(sync.RWMutex)}
 }

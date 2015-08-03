@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -13,9 +14,16 @@ import (
 	"github.com/warik/go-dialer/model"
 )
 
-var ami *gami.Asterisk
+var (
+	once sync.Once
+	ami  *gami.Asterisk
+)
 
 func GetAMI() *gami.Asterisk {
+	once.Do(func() {
+		conf := conf.GetConf()
+		ami = startAmi(conf.AsteriskHost, conf.AMILogin, conf.AMIPassword)
+	})
 	return ami
 }
 
@@ -160,9 +168,4 @@ func CallInQueue(call model.CallInQueue) (gami.Message, error) {
 	o.Async = true
 	o.CallerID = "777"
 	return sender(o)
-}
-
-func InitAmi() {
-	conf := conf.GetConf()
-	ami = startAmi(conf.AsteriskHost, conf.AMILogin, conf.AMIPassword)
 }

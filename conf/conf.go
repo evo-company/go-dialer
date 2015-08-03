@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -30,31 +31,34 @@ const (
 	AMI_RECONNECT_TIMEOUT     = 5 * time.Second
 )
 
-var conf Configuration
-var smsAlerts bool
-var config string
+var (
+	conf      Configuration
+	once      sync.Once
+	config    = flag.String("config", "conf.json", "Config file name")
+	smsAlerts = flag.Bool("sms_alerts", true, "Should send sms in emergency cases")
+
+	PORTAL_MAP = map[string]PortalMap{
+		"local": PortalMap{
+			"ua": "http://my.example.com:5000/",
+			"ru": "http://my.ru-trunk.uaprom/",
+		},
+		"trunk": PortalMap{
+			"ua": "http://my.trunk.uaprom/",
+			"ru": "http://my.ru-trunk.uaprom/",
+			"kz": "http://my.kz-trunk.uaprom/",
+			"by": "http://my.by-trunk.uaprom/",
+		},
+		"prod": PortalMap{
+			"ua": "https://my.prom.ua/",
+			"ru": "https://my.tiu.ru/",
+			"by": "https://my.deal.by/",
+			"kz": "https://my.satu.kz/",
+		},
+	}
+	ADMIN_PHONES = []string{"+380938677855", "+380637385529"}
+)
 
 type PortalMap map[string]string
-
-var PORTAL_MAP = map[string]PortalMap{
-	"local": PortalMap{
-		"ua": "http://my.example.com:5000/",
-		"ru": "http://my.ru-trunk.uaprom/",
-	},
-	"trunk": PortalMap{
-		"ua": "http://my.trunk.uaprom/",
-		"ru": "http://my.ru-trunk.uaprom/",
-		"kz": "http://my.kz-trunk.uaprom/",
-		"by": "http://my.by-trunk.uaprom/",
-	},
-	"prod": PortalMap{
-		"ua": "https://my.prom.ua/",
-		"ru": "https://my.tiu.ru/",
-		"by": "https://my.deal.by/",
-		"kz": "https://my.satu.kz/",
-	},
-}
-var ADMIN_PHONES = []string{"+380938677855", "+380637385529"}
 
 type Configuration struct {
 	AMILogin, Secret       string
@@ -74,7 +78,7 @@ func (c Configuration) GetApi(country string, apiKey string) string {
 
 func InitConf() {
 	path, _ := filepath.Abs(filepath.Dir(os.Args[0]))
-	file, err := os.Open(filepath.Join(path, config))
+	file, err := os.Open(filepath.Join(path, *config))
 	if err != nil {
 		panic(err)
 	}
@@ -88,11 +92,12 @@ func InitConf() {
 }
 
 func GetConf() *Configuration {
+	once.Do(InitConf)
 	return &conf
 }
 
 func Alert(msg string) {
-	if !smsAlerts {
+	if !*smsAlerts {
 		return
 	}
 	url := "http://sms.skysms.net/api/submit_sm"
@@ -107,9 +112,4 @@ func Alert(msg string) {
 			}
 		}
 	}
-}
-
-func init() {
-	flag.StringVar(&config, "config", "conf.json", "Config file name")
-	flag.BoolVar(&smsAlerts, "sms_alerts", true, "Should send sms in emergency cases")
 }

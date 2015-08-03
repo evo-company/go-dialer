@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/jmoiron/sqlx"
+	// required for sqlx
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/warik/go-dialer/conf"
@@ -35,8 +36,10 @@ type DBWrapper struct {
 	*sync.RWMutex
 }
 
-var db *DBWrapper
-var schema = `
+var (
+	once   sync.Once
+	db     *DBWrapper
+	schema = `
 	CREATE TABLE IF NOT EXISTS cdr (
 		id integer PRIMARY KEY AUTOINCREMENT,
 		unique_id text not null,
@@ -54,7 +57,8 @@ var schema = `
         id integer PRIMARY KEY AUTOINCREMENT,
         unique_id text UNIQUE
     );
-`
+	`
+)
 
 type CDR struct {
 	ID                  int    `db:"id"`
@@ -169,10 +173,6 @@ func (db *DBWrapper) SelectPhoneCalls(limit int) ([]PhoneCall, error) {
 	return phoneCalls, nil
 }
 
-func GetDB() *DBWrapper {
-	return db
-}
-
 func namedExec(stmt string, arg interface{}) (sql.Result, error) {
 	tx, err := db.Beginx()
 	if err != nil {
@@ -183,9 +183,13 @@ func namedExec(stmt string, arg interface{}) (sql.Result, error) {
 	return res, err
 }
 
-func InitDB() {
-	path, _ := filepath.Abs(filepath.Dir(os.Args[0]))
-	connector := sqlx.MustConnect("sqlite3", filepath.Join(path, conf.CDR_DB_FILE))
-	connector.MustExec(schema)
-	db = &DBWrapper{connector, new(sync.RWMutex)}
+func GetDB() *DBWrapper {
+	once.Do(func() {
+		path, _ := filepath.Abs(filepath.Dir(os.Args[0]))
+		connector := sqlx.MustConnect("sqlite3",
+			filepath.Join(path, conf.CDR_DB_FILE))
+		connector.MustExec(schema)
+		db = &DBWrapper{connector, new(sync.RWMutex)}
+	})
+	return db
 }

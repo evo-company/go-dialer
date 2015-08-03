@@ -18,29 +18,17 @@ import (
 	"github.com/warik/go-dialer/conf"
 	"github.com/warik/go-dialer/db"
 	"github.com/warik/go-dialer/model"
-	"github.com/warik/go-dialer/s3"
 	"github.com/warik/go-dialer/util"
 )
 
-var savePhoneCalls bool
-var sendCalls bool
-var manageQueues bool
+var (
+	savePhoneCalls = flag.Bool("save_calls", false, "Set true to save phone calls")
+	sendCalls      = flag.Bool("send_calls", false, "Set true to convert and send phone calls")
+	manageQueues   = flag.Bool("manage_queues", false, "Set true to enable asterisk queue management")
+)
 
 func init() {
-	flag.BoolVar(&savePhoneCalls, "save_calls", false, "Set true to save phone calls")
-	flag.BoolVar(&sendCalls, "send_calls", false, "Set true to convert and send phone calls")
-	flag.BoolVar(&manageQueues, "manage_queues", false,
-		"Set true to enable asterisk queue management")
-
 	flag.Parse()
-	conf.InitConf()
-	ami.InitAmi()
-	db.InitDB()
-
-	if sendCalls {
-		s3.InitS3()
-	}
-
 	runtime.GOMAXPROCS(runtime.NumCPU())
 }
 
@@ -69,7 +57,7 @@ func main() {
 		go CdrSender(&wg, mChan, finishChannels[len(finishChannels)-1], i+1)
 	}
 
-	if sendCalls {
+	if *sendCalls {
 		// PhoneCallReader gets unique phone calls ids from db and sends them to PhoneCallSender
 		finishChannels = append(finishChannels, make(chan struct{}))
 		wg.Add(1)
@@ -86,7 +74,7 @@ func main() {
 		}
 	}
 
-	if manageQueues {
+	if *manageQueues {
 		queueTransport := make(chan chan gami.Message)
 		// QueueMember handler gathers information about current queue occupations
 		// those events start to come after QueueStatus action will be sent
@@ -113,7 +101,7 @@ func main() {
 			time.NewTicker(conf.QUEUE_RENEW_INTERVAL))
 	}
 
-	if savePhoneCalls {
+	if *savePhoneCalls {
 		// PhoneCallRecordStarter initiates MixMonitor for call recording
 		pch := PhoneCallRecordStarter
 		ami.GetAMI().RegisterHandler("BridgeEnter", &pch)
