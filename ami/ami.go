@@ -146,7 +146,8 @@ func Call(call model.Call) (gami.Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	o := gami.NewOriginate(call.GetChannel(), context, strings.TrimPrefix(call.Exten, "+"), "1")
+	o := gami.NewOriginate(call.GetChannel(), context,
+		strings.TrimPrefix(call.Exten, "+"), "1")
 	o.CallerID = call.GetCallerID()
 	o.Async = true
 	return sender(o)
@@ -154,7 +155,8 @@ func Call(call model.Call) (gami.Message, error) {
 
 func CallInQueue(call model.CallInQueue) (gami.Message, error) {
 	queue := conf.GetConf().QueueContextMap[call.Country]
-	o := gami.NewOriginate(queue, "manager", call.PhoneNumber, "1")
+	o := gami.NewOriginate(queue, "manager",
+		strings.TrimPrefix(call.PhoneNumber, "+"), "1")
 	o.Async = true
 	o.CallerID = "777"
 	return sender(o)
