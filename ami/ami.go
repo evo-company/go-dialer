@@ -152,6 +152,14 @@ func Call(call model.Call) (gami.Message, error) {
 	return sender(o)
 }
 
+func CallInQueue(call model.CallInQueue) (gami.Message, error) {
+	queue := conf.GetConf().QueueContextMap[call.Country]
+	o := gami.NewOriginate(queue, "manager", call.PhoneNumber, "1")
+	o.Async = true
+	o.CallerID = "777"
+	return sender(o)
+}
+
 func InitAmi() {
 	conf := conf.GetConf()
 	ami = startAmi(conf.AsteriskHost, conf.AMILogin, conf.AMIPassword)

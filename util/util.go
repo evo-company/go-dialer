@@ -34,6 +34,7 @@ const (
 
 var PHONE_RE *regexp.Regexp
 var InnerPhoneNumbers InnerPhones
+var callbackCdrCache = NewSafeMap()
 
 type InnerPhones struct {
 	DuplicateNumbers model.Set
@@ -61,13 +62,13 @@ func LoadInnerNumbers(numbersChan chan<- []string) {
 	}
 }
 
-type SafeCallsCache struct {
-	Map map[string]struct{}
+type SafeMap struct {
+	Map map[string]interface{}
 	*sync.RWMutex
 }
 
-func NewSafeCallsCache() SafeCallsCache {
-	return SafeCallsCache{map[string]struct{}{}, new(sync.RWMutex)}
+func NewSafeMap() SafeMap {
+	return SafeMap{map[string]interface{}{}, new(sync.RWMutex)}
 }
 
 func Min(a, b int) int {
@@ -178,6 +179,31 @@ func GetCountryByPhones(innerPhoneNumber, opponentPhoneNumber string) (countryCo
 		}
 	}
 	return
+}
+
+func GetCallBackPhoneDetails(channel, destination, destinationChannel string) (
+	string, string, int) {
+	callbackCdrCache.Lock()
+	defer callbackCdrCache.Unlock()
+
+	channelSplit := strings.Split(channel, ";")
+	channelKey, channelNum := channelSplit[0], channelSplit[1]
+	if _, ok := callbackCdrCache.Map[channelKey]; !ok {
+		if channelNum == "1" {
+			callbackCdrCache.Map[channelKey] = destination
+		} else {
+			innerNum := PHONE_RE.FindStringSubmatch(destinationChannel)[1]
+			callbackCdrCache.Map[channelKey] = innerNum
+		}
+		return "", "", -1
+	}
+
+	firstNum := callbackCdrCache.Map[channelKey].(string)
+	if channelNum == "1" {
+		return firstNum, destination, OUTGOING_CALL
+	}
+	innerNum := PHONE_RE.FindStringSubmatch(destinationChannel)[1]
+	return innerNum, firstNum, OUTGOING_CALL
 }
 
 func GetPhoneDetails(channel, destChannel, source, destination, callerId string) (string,

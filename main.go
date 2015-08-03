@@ -151,6 +151,7 @@ func initRoutes() {
 	//API for prom
 	goji.Get("/show_inuse", withSignedParams(new(model.DummyStruct), ShowInuse))
 	goji.Post("/call", withSignedParams(new(model.Call), PlaceCall))
+	goji.Post("/call_in_queue", withStructParams(new(model.CallInQueue), PlaceCallInQueue))
 	goji.Post("/spy", withSignedParams(new(model.Call), PlaceSpy))
 	goji.Post("/queue_add", withSignedParams(new(model.PhoneCall), QueueAdd))
 	goji.Post("/queue_remove", withSignedParams(new(model.PhoneCall), QueueRemove))

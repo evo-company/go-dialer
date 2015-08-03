@@ -65,6 +65,7 @@ type Configuration struct {
 	Agencies               map[string]model.CountrySettings
 	TimeZone               int
 	StorageSettings        map[string]string
+	QueueContextMap        map[string]string
 }
 
 func (c Configuration) GetApi(country string, apiKey string) string {

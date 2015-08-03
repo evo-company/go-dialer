@@ -38,8 +38,13 @@ func (c Call) GetCallerID() string {
 	return fmt.Sprintf("call_from_CRM <%v>", c.Inline)
 }
 
+type CallInQueue struct {
+	PhoneNumber string `param:"phone_number"`
+	Country     string `param:"country"`
+}
+
 type DialerStats struct {
-	Name string
+	Name    string
 	DBCount int
 }
 
@@ -57,7 +62,7 @@ type SignedInputData struct {
 }
 
 type Cdr struct {
-	Id int `param:"id"`
+	Id       int    `param:"id"`
 	UniqueID string `param:"unique_id"`
 }
 
