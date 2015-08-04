@@ -224,10 +224,10 @@ func QueueManager(wg *sync.WaitGroup, queueTransport <-chan chan gami.Message, f
 							if staticQueue == queue || generalizedQueue == queue {
 								status = "available"
 							} else {
-								//_, err := ami.RemoveFromQueue(queue, countryCode, number)
-								//	if err != nil {
-								//	glog.Errorln(err, number)
-								//}
+								_, err := ami.RemoveFromQueue(queue, countryCode, number)
+								if err != nil {
+									glog.Errorln(err, number)
+								}
 							}
 						}
 						numbersState[number] = status

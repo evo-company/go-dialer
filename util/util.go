@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"hash"
-	"net/http"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -184,10 +183,11 @@ func GetCountryByPhones(innerPhoneNumber, opponentPhoneNumber string) (countryCo
 }
 
 func GetCallBackPhoneDetails(channel, destination, destinationChannel string) (
-	string, string, int) {
+	innerNum string, externNum string, callType int) {
 	callbackCdrCache.Lock()
 	defer callbackCdrCache.Unlock()
 
+	innerNum, externNum, callType = "", "", -1
 	channelSplit := strings.Split(channel, ";")
 	channelKey, channelNum := channelSplit[0], channelSplit[1]
 	if _, ok := callbackCdrCache.Map[channelKey]; !ok {
@@ -197,15 +197,19 @@ func GetCallBackPhoneDetails(channel, destination, destinationChannel string) (
 			innerNum := PHONE_RE.FindStringSubmatch(destinationChannel)[1]
 			callbackCdrCache.Map[channelKey] = innerNum
 		}
-		return "", "", -1
+		return
 	}
 
 	firstNum := callbackCdrCache.Map[channelKey].(string)
 	if channelNum == "1" {
-		return firstNum, destination, OUTGOING_CALL
+		innerNum, externNum, callType = firstNum, destination, OUTGOING_CALL
+	} else {
+		innerNumArr := PHONE_RE.FindStringSubmatch(destinationChannel)
+		if innerNumArr != nil {
+			innerNum, externNum, callType = innerNumArr[1], firstNum, OUTGOING_CALL
+		}
 	}
-	innerNum := PHONE_RE.FindStringSubmatch(destinationChannel)[1]
-	return innerNum, firstNum, OUTGOING_CALL
+	return
 }
 
 func GetPhoneDetails(channel, destChannel, source, destination, callerId string) (string,
@@ -253,45 +257,6 @@ func IsNumbersValid(innerPhoneNumber, opponentPhoneNumber, countryCode string) b
 		return false
 	}
 	return len(opponentPhoneNumber) >= 7
-}
-
-func APIResponseWriter(resp model.Response, err error, w http.ResponseWriter) {
-	if err != nil {
-		glog.Errorln(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	} else {
-		glog.Info("<<< PORTAL RESPONSE", resp)
-		fmt.Fprint(w, resp)
-	}
-}
-
-func AMIResponseWriter(w http.ResponseWriter, resp gami.Message, err error, statusFromResponse bool,
-	dataKey string) {
-	if err != nil {
-		glog.Errorln(err)
-		fmt.Fprint(w, model.Response{"status": "error", "error": err})
-		return
-	}
-
-	if r, ok := resp["Response"]; ok && r == "Follows" {
-		glog.Infoln("<<< RESPONSE...")
-	} else {
-		glog.Infoln("<<< RESPONSE", resp)
-	}
-
-	var status string
-	if statusFromResponse {
-		status = strings.ToLower(resp["Response"])
-	}
-
-	response := ""
-	if val, ok := resp[dataKey]; ok {
-		response = val
-		status = "success"
-	} else {
-		status = "error"
-	}
-	fmt.Fprint(w, model.Response{"status": status, "response": response})
 }
 
 func UnsignData(i interface{}, d model.SignedInputData) (err error) {

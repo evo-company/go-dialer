@@ -129,31 +129,31 @@ func main() {
 func initRoutes() {
 	// API for self
 	goji.Get("/", ImUp)
-	goji.Get("/ping", PingAsterisk)
+	goji.Get("/ping", AmiHandler{nil, PingAsterisk})
 	goji.Get("/check-portals", CheckPortals)
 	goji.Get("/stats", Stats)
 	goji.Get("/cdr/count", CdrCount)
-	goji.Get("/cdr/get", withStructParams(new(model.Cdr), GetCdr))
-	goji.Post("/cdr/delete", withStructParams(new(model.Cdr), DeleteCdr))
+	goji.Get("/cdr/get", ApiHandler{new(model.Cdr), GetCdr})
+	goji.Post("/cdr/delete", ApiHandler{new(model.Cdr), DeleteCdr})
 
 	//API for prom
-	goji.Get("/show_inuse", withSignedParams(new(model.DummyStruct), ShowInuse))
-	goji.Post("/call", withSignedParams(new(model.Call), PlaceCall))
-	goji.Post("/call_in_queue", withStructParams(new(model.CallInQueue), PlaceCallInQueue))
-	goji.Post("/spy", withSignedParams(new(model.Call), PlaceSpy))
-	goji.Post("/queue_add", withSignedParams(new(model.PhoneCall), QueueAdd))
-	goji.Post("/queue_remove", withSignedParams(new(model.PhoneCall), QueueRemove))
+	goji.Get("/show_inuse", AmiHandler{new(model.DummyStruct), ShowInuse})
+	goji.Post("/call", AmiHandler{new(model.Call), PlaceCall})
+	goji.Post("/call_in_queue", AmiHandler{new(model.CallInQueue), PlaceCallInQueue})
+	goji.Post("/spy", AmiHandler{new(model.Call), PlaceSpy})
+	goji.Post("/queue_add", AmiHandler{new(model.PhoneCall), QueueAdd})
+	goji.Post("/queue_remove", AmiHandler{new(model.PhoneCall), QueueRemove})
 
 	// API for asterisk
-	goji.Get("/api/manager_phone", withStructParams(new(model.PhoneCall), ManagerPhone))
+	goji.Get("/api/manager_phone", ApiHandler{new(model.PhoneCall), ManagerPhone})
 	goji.Get("/api/manager_phone_for_company",
-		withStructParams(new(model.PhoneCall), ManagerPhoneForCompany))
+		ApiHandler{new(model.PhoneCall), ManagerPhoneForCompany})
 	goji.Get("/api/show_calling_popup_to_manager",
-		withStructParams(new(model.PhoneCall), ShowCallingPopup))
+		ApiHandler{new(model.PhoneCall), ShowCallingPopup})
 	goji.Get("/api/show_calling_review_popup_to_manager",
-		withStructParams(new(model.PhoneCall), ShowCallingReview))
+		ApiHandler{new(model.PhoneCall), ShowCallingReview})
 	goji.Get("/api/manager_call_after_hours",
-		withStructParams(new(model.PhoneCall), ManagerCallAfterHours))
+		ApiHandler{new(model.PhoneCall), ManagerCallAfterHours})
 
 	goji.Use(JSONReponse)
 	// goji.Use(AllowedRemoteAddress)
@@ -179,36 +179,4 @@ func AllowedRemoteAddress(h http.Handler) http.Handler {
 		http.Error(w, "Not allowed remote address", http.StatusUnauthorized)
 	}
 	return http.HandlerFunc(fn)
-}
-
-func withSignedParams(i interface{}, h func(interface{}, http.ResponseWriter,
-	*http.Request)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		signedData := new(model.SignedInputData)
-		if err := model.GetStructFromParams(r, signedData); err != nil {
-			glog.Errorln(err.Error())
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if err := util.UnsignData(i, (*signedData)); err != nil {
-			glog.Errorln(err.Error())
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-			return
-		}
-		glog.Infoln("<<< INPUT PARAMS", i)
-		h(i, w, r)
-	}
-}
-
-func withStructParams(i interface{}, h func(interface{}, http.ResponseWriter,
-	*http.Request)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if err := model.GetStructFromParams(r, i); err != nil {
-			glog.Errorln(err.Error())
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		glog.Infoln("<<< INPUT PARAMS", i)
-		h(i, w, r)
-	}
 }
