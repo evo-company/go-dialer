@@ -20,7 +20,7 @@ func CdrEventHandler(m gami.Message) {
 
 	var innerNumber, outerNumber string
 	var callType int
-	if strings.Contains(m["Channel"], "test") {
+	if strings.Contains(m["Channel"], conf.GetConf().GetCallBackQueueSufix()) {
 		innerNumber, outerNumber, callType = util.GetCallBackPhoneDetails(
 			m["Channel"], m["Destination"], m["DestinationChannel"])
 	} else {

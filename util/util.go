@@ -194,8 +194,10 @@ func GetCallBackPhoneDetails(channel, destination, destinationChannel string) (
 		if channelNum == "1" {
 			callbackCdrCache.Map[channelKey] = destination
 		} else {
-			innerNum := PHONE_RE.FindStringSubmatch(destinationChannel)[1]
-			callbackCdrCache.Map[channelKey] = innerNum
+			innerNumArr := PHONE_RE.FindStringSubmatch(destinationChannel)
+			if innerNumArr != nil {
+				callbackCdrCache.Map[channelKey] = innerNumArr[1]
+			}
 		}
 		return
 	}

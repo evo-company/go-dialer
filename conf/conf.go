@@ -69,11 +69,27 @@ type Configuration struct {
 	Agencies               map[string]model.CountrySettings
 	TimeZone               int
 	StorageSettings        map[string]string
-	QueueContextMap        map[string]string
+	CallBackQueuePrefix    string
+	CallBackQueueSufix     string
 }
 
 func (c Configuration) GetApi(country string, apiKey string) string {
-	return PORTAL_MAP[conf.Target][country] + c.Api + apiKey
+	return PORTAL_MAP[c.Target][country] + c.Api + apiKey
+}
+
+func (c Configuration) GetCallBackQueueSufix() string {
+	if c.Target != "prod" {
+		return "test"
+	}
+	return c.CallBackQueueSufix
+}
+
+func (c Configuration) GetCallBackQueue(country string) string {
+	if c.Target != "prod" {
+		return "Local/777@test"
+	}
+	prefix, sufix := c.CallBackQueuePrefix, c.CallBackQueueSufix
+	return fmt.Sprintf("%s@%s%s", prefix, country, sufix)
 }
 
 func InitConf() {

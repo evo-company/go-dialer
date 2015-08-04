@@ -162,7 +162,7 @@ func Call(call model.Call) (gami.Message, error) {
 }
 
 func CallInQueue(call model.CallInQueue) (gami.Message, error) {
-	queue := conf.GetConf().QueueContextMap[call.Country]
+	queue := conf.GetConf().GetCallBackQueue(call.Country)
 	o := gami.NewOriginate(queue, "manager",
 		strings.TrimPrefix(call.PhoneNumber, "+"), "1")
 	o.Async = true
