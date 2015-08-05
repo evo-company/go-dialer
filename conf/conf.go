@@ -71,6 +71,7 @@ type Configuration struct {
 	StorageSettings        map[string]string
 	CallBackQueuePrefix    string
 	CallBackQueueSufix     string
+	QuestionaryUrl         string
 }
 
 func (c Configuration) GetApi(country string, apiKey string) string {
@@ -90,6 +91,10 @@ func (c Configuration) GetCallBackQueue(country string) string {
 	}
 	prefix, sufix := c.CallBackQueuePrefix, c.CallBackQueueSufix
 	return fmt.Sprintf("%s@%s%s", prefix, country, sufix)
+}
+
+func (c Configuration) GetReviewUri(uniqueId string) string {
+	return fmt.Sprintf("%s?callid=%s", c.QuestionaryUrl, uniqueId)
 }
 
 func InitConf() {

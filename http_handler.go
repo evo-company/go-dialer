@@ -157,27 +157,21 @@ func ManagerCallAfterHours(p interface{}, w http.ResponseWriter,
 
 func ShowCallingReview(p interface{}, w http.ResponseWriter, r *http.Request) (model.Response, error) {
 	phoneCall := (*p.(*model.PhoneCall))
-	settings := conf.GetConf().Agencies[phoneCall.Country]
-	payload, _ := json.Marshal(model.Dict{
-		"inner_number": phoneCall.InnerNumber,
-		"review_href":  phoneCall.ReviewHref,
-		"CompanyId":    settings.CompanyId,
-	})
-	url := conf.GetConf().GetApi(phoneCall.Country, "show_calling_review_popup_to_manager")
-	resp, err := util.SendRequest(payload, url, "POST", settings.Secret, settings.CompanyId)
+	resp, err := util.ShowReviewPopup(
+		phoneCall.ReviewHref,
+		phoneCall.InnerNumber,
+		phoneCall.Country,
+	)
 	return model.Response{"status": resp}, err
 }
 
 func ShowCallingPopup(p interface{}, w http.ResponseWriter, r *http.Request) (model.Response, error) {
 	phoneCall := (*p.(*model.PhoneCall))
-	settings := conf.GetConf().Agencies[phoneCall.Country]
-	payload, _ := json.Marshal(model.Dict{
-		"inner_number":  phoneCall.InnerNumber,
-		"calling_phone": phoneCall.CallingPhone,
-		"CompanyId":     settings.CompanyId,
-	})
-	url := conf.GetConf().GetApi(phoneCall.Country, "show_calling_popup_to_manager")
-	resp, err := util.SendRequest(payload, url, "POST", settings.Secret, settings.CompanyId)
+	resp, err := util.ShowCallingPopup(
+		phoneCall.InnerNumber,
+		phoneCall.CallingPhone,
+		phoneCall.Country,
+	)
 	return model.Response{"status": resp}, err
 }
 

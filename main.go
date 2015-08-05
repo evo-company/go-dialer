@@ -23,6 +23,7 @@ import (
 
 var (
 	savePhoneCalls = flag.Bool("save_calls", false, "Set true to save phone calls")
+	showPopups     = flag.Bool("show_popups", false, "Set true to show popups on portal before and after call")
 	sendCalls      = flag.Bool("send_calls", false, "Set true to convert and send phone calls")
 	manageQueues   = flag.Bool("manage_queues", false, "Set true to enable asterisk queue management")
 )
@@ -33,7 +34,6 @@ func init() {
 }
 
 func main() {
-	// CdrReader reads cdrs from db once in a while and sends them to CdrSender
 	wg := sync.WaitGroup{}
 	finishChannels := []chan struct{}{make(chan struct{})}
 
@@ -46,6 +46,7 @@ func main() {
 	finishChannels = append(finishChannels, make(chan struct{}))
 	wg.Add(1)
 	mChan := make(chan db.CDR, conf.MAX_CDR_NUMBER*2)
+	// CdrReader reads cdrs from db once in a while and sends them to CdrSender
 	go CdrReader(&wg, mChan, finishChannels[len(finishChannels)-1],
 		time.NewTicker(conf.CDR_READ_INTERVAL))
 
@@ -101,10 +102,11 @@ func main() {
 			time.NewTicker(conf.QUEUE_RENEW_INTERVAL))
 	}
 
-	if *savePhoneCalls {
-		// PhoneCallRecordStarter initiates MixMonitor for call recording
-		pch := PhoneCallRecordStarter
-		ami.GetAMI().RegisterHandler("BridgeEnter", &pch)
+	if *savePhoneCalls || *showPopups {
+		// BridgeEventHandler initiates MixMonitor for call recording
+		// and shows popup for manager in portal
+		beh := BridgeEventHandler
+		ami.GetAMI().RegisterHandler("BridgeEnter", &beh)
 	}
 
 	// CdrEventHandler reads cdrs, processes them and stores in db for further sending to

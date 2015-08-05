@@ -141,7 +141,7 @@ func GetActiveQueuesMap(activeQueuesChan <-chan gami.Message) (
 	return
 }
 
-func ShowCallingPopup(innerPhoneNumber, callingPhone, country string) error {
+func ShowCallingPopup(innerPhoneNumber, callingPhone, country string) (string, error) {
 	settings := conf.GetConf().Agencies[country]
 	payload, _ := json.Marshal(model.Dict{
 		"inner_number":  innerPhoneNumber,
@@ -149,8 +149,19 @@ func ShowCallingPopup(innerPhoneNumber, callingPhone, country string) error {
 		"CompanyId":     settings.CompanyId,
 	})
 	url := conf.GetConf().GetApi(country, "show_calling_popup_to_manager")
-	_, err := SendRequest(payload, url, "POST", settings.Secret, settings.CompanyId)
-	return err
+	resp, err := SendRequest(payload, url, "POST", settings.Secret, settings.CompanyId)
+	return resp, err
+}
+
+func ShowReviewPopup(reviewHref, innerNumber, country string) (string, error) {
+	settings := conf.GetConf().Agencies[country]
+	payload, _ := json.Marshal(model.Dict{
+		"inner_number": innerNumber,
+		"review_href":  reviewHref,
+		"CompanyId":    settings.CompanyId,
+	})
+	url := conf.GetConf().GetApi(country, "show_calling_review_popup_to_manager")
+	return SendRequest(payload, url, "POST", settings.Secret, settings.CompanyId)
 }
 
 func GetCountryByPhones(innerPhoneNumber, opponentPhoneNumber string) (countryCode string) {
