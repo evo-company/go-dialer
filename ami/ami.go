@@ -12,6 +12,7 @@ import (
 
 	"github.com/warik/go-dialer/conf"
 	"github.com/warik/go-dialer/model"
+	"github.com/warik/go-dialer/util"
 )
 
 var (
@@ -29,6 +30,7 @@ func GetAMI() *gami.Asterisk {
 
 func connectAndLogin(a *gami.Asterisk) {
 	messageAlreadySent := false
+	numTries := 1
 	for {
 		if err := a.Start(); err != nil {
 			glog.Errorln(err)
@@ -37,7 +39,9 @@ func connectAndLogin(a *gami.Asterisk) {
 				conf.Alert("Lost connection with asterisk")
 				messageAlreadySent = true
 			}
-			time.Sleep(conf.AMI_RECONNECT_TIMEOUT)
+			duration := util.PowInt(conf.AMI_RECONNECT_TIMEOUT, numTries)
+			time.Sleep(time.Duration(duration) * time.Second)
+			numTries++
 			continue
 		}
 		if messageAlreadySent {

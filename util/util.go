@@ -72,11 +72,12 @@ func NewSafeMap() SafeMap {
 	return SafeMap{map[string]interface{}{}, new(sync.RWMutex)}
 }
 
-func Min(a, b int) int {
-	if a <= b {
-		return a
+func PowInt(a, b int) (res int) {
+	res = 1
+	for i := 0; i < a; i++ {
+		res *= b
 	}
-	return b
+	return
 }
 
 func getKey(secret string) []byte {

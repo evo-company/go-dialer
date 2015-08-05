@@ -16,19 +16,20 @@ import (
 )
 
 const (
+	// All intervals are in seconds if other type not provided
 	REQUEST_TIMEOUT           = 5
 	CDR_READ_INTERVAL         = 30 * time.Second
 	QUEUE_RENEW_INTERVAL      = 10 * time.Minute
 	NUMBERS_LOAD_INTERVAL     = 5 * time.Minute
 	PHONE_CALLS_SAVE_INTERVAL = 10 * time.Second
-	REMOTE_ERROR_TEXT         = "Error on remote server, status code - %v"
-	CDR_DB_FILE               = "cdr_log.db"
-	MAX_CDR_NUMBER            = 50
-	MAX_PHONE_CALLS_NUMBER    = 10
-	CDR_SAVERS_COUNT          = 2
-	PHONE_CALL_SENDERS_COUNT  = 2
-	BOLT_CDR_BUCKET           = "CdrBucket"
-	AMI_RECONNECT_TIMEOUT     = 5 * time.Second
+	AMI_RECONNECT_TIMEOUT     = 5
+
+	REMOTE_ERROR_TEXT        = "Error on remote server, status code - %v"
+	CDR_DB_FILE              = "cdr_log.db"
+	MAX_CDR_NUMBER           = 50
+	MAX_PHONE_CALLS_NUMBER   = 10
+	CDR_SAVERS_COUNT         = 2
+	PHONE_CALL_SENDERS_COUNT = 2
 )
 
 var (
