@@ -16,8 +16,9 @@ import (
 )
 
 var (
-	once sync.Once
-	ami  *gami.Asterisk
+	QueueState = util.NewSafeMap()
+	once       sync.Once
+	ami        *gami.Asterisk
 )
 
 func GetAMI() *gami.Asterisk {
@@ -63,10 +64,8 @@ func startAmi(host, login, password string) (a *gami.Asterisk) {
 	return
 }
 
-func getInterface(country, innerNumber string) (string, string) {
-	state := fmt.Sprintf("SIP/%s", innerNumber)
-	ifc := fmt.Sprintf("Local/%s%s@Queue_Members/n", innerNumber, country)
-	return ifc, state
+func getInterface(innerNumber string) string {
+	return fmt.Sprintf("SIP/%s", innerNumber)
 }
 
 func sender(param interface{}) (gami.Message, error) {
@@ -118,25 +117,55 @@ func SendMixMonitor(channel, fileName string) (gami.Message, error) {
 	return sender(m)
 }
 
-func AddToQueue(queue, country, innerNumber string) (gami.Message, error) {
-	ifc, state := getInterface(country, innerNumber)
+func AddToQueue(queue, innerNumber string) (gami.Message, error) {
 	m := gami.Message{
-		"Action":         "QueueAdd",
-		"Queue":          queue,
-		"Interface":      ifc,
-		"StateInterface": state,
+		"Action":    "QueueAdd",
+		"Queue":     queue,
+		"Interface": getInterface(innerNumber),
 	}
 	return sender(m)
 }
 
-func RemoveFromQueue(queue, country, innerNumber string) (gami.Message, error) {
-	ifc, _ := getInterface(country, innerNumber)
-	m := gami.Message{"Action": "QueueRemove", "Queue": queue, "Interface": ifc}
+func RemoveFromQueue(queue, innerNumber string) (gami.Message, error) {
+	m := gami.Message{
+		"Action":    "QueueRemove",
+		"Queue":     queue,
+		"Interface": getInterface(innerNumber),
+	}
 	return sender(m)
 }
 
-func QueueStatus() error {
-	return ami.SendAction(gami.Message{"Action": "QueueStatus"}, nil)
+func QueueStatus(queue, innerNumber string) (gami.Message, error) {
+	m := gami.Message{
+		"Action": "QueueStatus",
+		"Queue":  queue,
+		"Member": getInterface(innerNumber),
+	}
+	resp, err := sender(m)
+	if err != nil {
+		return resp, err
+	}
+
+	response := gami.Message{"Response": "success"}
+	// Before getting new state in queue need to remove old one for case
+	// then number was in queue but was removed
+	QueueState.Remove(innerNumber)
+	status := QueueState.Get(innerNumber, 1, "-1")
+
+	var responseStatus string
+	switch status.(string) {
+	case "-1":
+		responseStatus = "not_in_queue"
+	case "0":
+		responseStatus = "not_available"
+	case "4":
+		responseStatus = "not_available"
+	default:
+		responseStatus = "available"
+	}
+
+	response["StatusKey"] = responseStatus
+	return response, nil
 }
 
 func GetActiveChannels() (gami.Message, error) {

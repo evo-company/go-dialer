@@ -72,6 +72,34 @@ func NewSafeMap() SafeMap {
 	return SafeMap{map[string]interface{}{}, new(sync.RWMutex)}
 }
 
+func (s SafeMap) Remove(key string) {
+	s.Lock()
+	defer s.Unlock()
+	delete(s.Map, key)
+}
+
+func (s SafeMap) Put(key string, val interface{}) {
+	s.Lock()
+	defer s.Unlock()
+	s.Map[key] = val
+}
+
+func (s SafeMap) Get(key string, timeout int, _default interface{}) interface{} {
+	deadEnd := time.Now().Add(time.Duration(timeout) * time.Second)
+	for {
+		if time.Now().Sub(deadEnd) >= time.Duration(0) {
+			if _default != nil {
+				return _default
+			}
+			return nil
+		}
+		if val, ok := s.Map[key]; ok {
+			return val
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func PowInt(a, b int) (res int) {
 	res = 1
 	for i := 0; i < a; i++ {
@@ -310,7 +338,7 @@ func SendRequest(payload []byte, url, method, secret, companyId string) (string,
 	}
 
 	if resp.StatusCode != 200 {
-		return "", errors.New(fmt.Sprintf(conf.REMOTE_ERROR_TEXT, resp.StatusCode))
+		return "", fmt.Errorf(conf.REMOTE_ERROR_TEXT, resp.StatusCode)
 	}
 
 	return respBody, nil

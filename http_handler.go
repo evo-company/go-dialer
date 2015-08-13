@@ -45,24 +45,28 @@ func (ah ApiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 type AmiHandler struct {
 	p  interface{}
-	fn func(p interface{}, w http.ResponseWriter, r *http.Request) (gami.Message, error, bool, string)
+	fn func(p interface{}, w http.ResponseWriter, r *http.Request) (gami.Message, error, string)
 }
 
 func (ah AmiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if ah.p != nil {
-		err := withSignedParams(ah.p, r)
-		// err := withStructParams(ah.p, r)
+		var err error
+		if *signedInput {
+			err = withSignedParams(ah.p, r)
+		} else {
+			err = withStructParams(ah.p, r)
+		}
 		if err != nil {
 			glog.Errorln(err)
-			fmt.Fprint(w, model.Response{"status": "error", "error": err})
+			fmt.Fprint(w, model.Response{"status": "error", "error": err.Error()})
 			return
 		}
 	}
 
-	resp, err, statusFromResponse, dataKey := ah.fn(ah.p, w, r)
+	resp, err, dataKey := ah.fn(ah.p, w, r)
 	if err != nil {
 		glog.Errorln(err)
-		fmt.Fprint(w, model.Response{"status": "error", "error": err})
+		fmt.Fprint(w, model.Response{"status": "error", "error": err.Error()})
 		return
 	}
 	if r, ok := resp["Response"]; ok && r == "Follows" {
@@ -71,10 +75,7 @@ func (ah AmiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		glog.Infoln("<<< RESPONSE", resp)
 	}
 
-	var status string
-	if statusFromResponse {
-		status = strings.ToLower(resp["Response"])
-	}
+	status := strings.ToLower(resp["Response"])
 
 	response := ""
 	if val, ok := resp[dataKey]; ok {
@@ -199,50 +200,55 @@ func ManagerPhone(p interface{}, w http.ResponseWriter, r *http.Request) (model.
 	return model.Response{"inner_number": resp}, err
 }
 
-func QueueRemove(p interface{}, w http.ResponseWriter, r *http.Request) (gami.Message, error, bool, string) {
-	call := (*p.(*model.PhoneCall))
-	queue, err := ami.GetStaticQueue(call.InnerNumber)
-	if err != nil {
-		return nil, err, false, ""
-	}
-	resp, err := ami.RemoveFromQueue(queue, call.Country, call.InnerNumber)
-	return resp, err, true, "Message"
+func QueueRemove(p interface{}, w http.ResponseWriter, r *http.Request) (gami.Message, error, string) {
+	qc := (*p.(*model.QueueContainer))
+	resp, err := ami.RemoveFromQueue(qc.Queue, qc.InnerNumber)
+	return resp, err, "Message"
 }
 
-func QueueAdd(p interface{}, w http.ResponseWriter, r *http.Request) (gami.Message, error, bool, string) {
-	call := (*p.(*model.PhoneCall))
-	queue, err := ami.GetStaticQueue(call.InnerNumber)
+func QueueAdd(p interface{}, w http.ResponseWriter, r *http.Request) (gami.Message, error, string) {
+	qc := (*p.(*model.QueueContainer))
+	resp, err := ami.AddToQueue(qc.Queue, qc.InnerNumber)
 	if err != nil {
-		return nil, err, false, ""
+		return resp, err, ""
 	}
-	resp, err := ami.AddToQueue(queue, call.Country, call.InnerNumber)
-	return resp, err, true, "Message"
+	resp, err = ami.QueueStatus(qc.Queue, qc.InnerNumber)
+	if err != nil {
+		return resp, err, ""
+	}
+	return resp, err, "StatusKey"
 }
 
-func PlaceSpy(p interface{}, w http.ResponseWriter, r *http.Request) (gami.Message, error, bool, string) {
+func QueueStatus(p interface{}, w http.ResponseWriter, r *http.Request) (gami.Message, error, string) {
+	qc := (*p.(*model.QueueContainer))
+	resp, err := ami.QueueStatus(qc.Queue, qc.InnerNumber)
+	return resp, err, "StatusKey"
+}
+
+func PlaceSpy(p interface{}, w http.ResponseWriter, r *http.Request) (gami.Message, error, string) {
 	call := (*p.(*model.Call))
 	resp, err := ami.Spy(call)
-	return resp, err, true, "Message"
+	return resp, err, "Message"
 }
 
-func ShowInuse(p interface{}, w http.ResponseWriter, r *http.Request) (gami.Message, error, bool, string) {
+func ShowInuse(p interface{}, w http.ResponseWriter, r *http.Request) (gami.Message, error, string) {
 	resp, err := ami.GetActiveChannels()
-	return resp, err, true, "CmdData"
+	return resp, err, "CmdData"
 }
 
-func PlaceCall(p interface{}, w http.ResponseWriter, r *http.Request) (gami.Message, error, bool, string) {
+func PlaceCall(p interface{}, w http.ResponseWriter, r *http.Request) (gami.Message, error, string) {
 	resp, err := ami.Call(*p.(*model.Call))
-	return resp, err, true, "Message"
+	return resp, err, "Message"
 }
 
-func PlaceCallInQueue(p interface{}, w http.ResponseWriter, r *http.Request) (gami.Message, error, bool, string) {
+func PlaceCallInQueue(p interface{}, w http.ResponseWriter, r *http.Request) (gami.Message, error, string) {
 	resp, err := ami.CallInQueue(*p.(*model.CallInQueue))
-	return resp, err, true, "Message"
+	return resp, err, "Message"
 }
 
-func PingAsterisk(p interface{}, w http.ResponseWriter, r *http.Request) (gami.Message, error, bool, string) {
+func PingAsterisk(p interface{}, w http.ResponseWriter, r *http.Request) (gami.Message, error, string) {
 	resp, err := ami.Ping()
-	return resp, err, true, "Ping"
+	return resp, err, "Ping"
 }
 
 func CheckPortals(w http.ResponseWriter, r *http.Request) {

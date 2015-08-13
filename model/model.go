@@ -43,6 +43,11 @@ type CallInQueue struct {
 	Country     string `param:"country"`
 }
 
+type QueueContainer struct {
+	InnerNumber string `param:"inner_number" json:"inner_number"`
+	Queue       string `param:"queue" json:"queue"`
+}
+
 type DialerStats struct {
 	Name    string
 	DBCount int
