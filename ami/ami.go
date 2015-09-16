@@ -74,6 +74,7 @@ func sender(param interface{}) (gami.Message, error) {
 	cb := func(m gami.Message) {
 		cbc <- m
 	}
+	glog.Infoln("Sending to asterisk\n", param)
 	switch param.(type) {
 	case gami.Message:
 		err = ami.SendAction(param.(gami.Message), &cb)
@@ -199,6 +200,6 @@ func CallInQueue(call model.CallInQueue) (gami.Message, error) {
 	o := gami.NewOriginate(queue, "manager",
 		strings.TrimPrefix(call.PhoneNumber, "+"), "1")
 	o.Async = true
-	o.CallerID = "777"
+	o.CallerID = "<CallMeBack> 777"
 	return sender(o)
 }

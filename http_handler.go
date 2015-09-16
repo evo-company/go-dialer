@@ -92,6 +92,7 @@ func withSignedParams(i interface{}, r *http.Request) error {
 	if err := model.GetStructFromParams(r, signedData); err != nil {
 		return err
 	}
+	glog.Infoln("<<< SIGNED PARAMS", signedData)
 	if err := util.UnsignData(i, (*signedData)); err != nil {
 		return err
 	}

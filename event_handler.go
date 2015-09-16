@@ -116,22 +116,22 @@ func BridgeEventHandler(m gami.Message) {
 
 	// For one actual call we can have several bridge events depending on call type
 	// So we need to remember channel for which we already started MixMonitor
-	callsCache.Lock()
-	defer callsCache.Unlock()
-	channel := m["BridgeUniqueid"]
-	if _, ok := callsCache.Map[channel]; ok {
-		return
-	}
-	callsCache.Map[channel] = struct{}{}
+	// callsCache.Lock()
+	// defer callsCache.Unlock()
+	// channel := m["BridgeUniqueid"]
+	// if _, ok := callsCache.Map[channel]; ok {
+	// 	return
+	// }
+	// callsCache.Map[channel] = struct{}{}
 
-	if *savePhoneCalls {
+	if *savePhoneCalls && m["BridgeNumChannels"] == "1" {
 		fileName := util.GetPhoneCallFileName(conf.GetConf().Name, m["Uniqueid"], "wav")
 		fullFileName := fmt.Sprintf("%s/%s", conf.GetConf().FolderForCalls, fileName)
-		res, err := ami.SendMixMonitor(m["Channel"], fullFileName)
+		_, err := ami.SendMixMonitor(m["Channel"], fullFileName)
 		if err != nil {
 			glog.Errorln(err)
 		} else {
-			glog.Infoln("MixMonitor sent...", res)
+			glog.Infoln("MixMonitor sent...", fileName)
 		}
 	}
 }

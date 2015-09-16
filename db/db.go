@@ -16,10 +16,10 @@ import (
 const (
 	INSERT_CDR_STMT = `
 		INSERT INTO cdr (
-			unique_id, inner_phone_number, opponent_phone_number, call_type, company_id, disposition,
+			caller_id, unique_id, inner_phone_number, opponent_phone_number, call_type, company_id, disposition,
 			start_time, billable_seconds, country_code
 		) values (
-			:unique_id, :inner_phone_number, :opponent_phone_number, :call_type, :company_id,
+			:caller_id, :unique_id, :inner_phone_number, :opponent_phone_number, :call_type, :company_id,
 			:disposition, :start_time, :billable_seconds, :country_code
 		)
 	`
@@ -42,6 +42,7 @@ var (
 	schema = `
 	CREATE TABLE IF NOT EXISTS cdr (
 		id integer PRIMARY KEY AUTOINCREMENT,
+		caller_id text not null,
 		unique_id text not null,
 		inner_phone_number text not null,
 		opponent_phone_number text not null,
@@ -63,6 +64,7 @@ var (
 type CDR struct {
 	ID                  int    `db:"id"`
 	UniqueID            string `db:"unique_id"`
+	CallerID            string `db:"caller_id"`
 	InnerPhoneNumber    string `db:"inner_phone_number"`
 	OpponentPhoneNumber string `db:"opponent_phone_number"`
 	CallType            string `db:"call_type"`
@@ -81,6 +83,7 @@ type PhoneCall struct {
 func (db *DBWrapper) AddCDR(m map[string]string) (sql.Result, error) {
 	cdr := CDR{
 		UniqueID:            m["UniqueID"],
+		CallerID:            m["CallerID"],
 		InnerPhoneNumber:    m["InnerPhoneNumber"],
 		OpponentPhoneNumber: m["OpponentPhoneNumber"],
 		CallType:            m["CallType"],

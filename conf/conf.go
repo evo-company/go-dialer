@@ -40,8 +40,7 @@ var (
 
 	PORTAL_MAP = map[string]PortalMap{
 		"local": PortalMap{
-			"ua": "http://my.example.com:5000/",
-			"ru": "http://my.ru-trunk.uaprom/",
+			"ua": "http://192.168.17.101:5000/",
 		},
 		"trunk": PortalMap{
 			"ua": "http://my.trunk.uaprom/",

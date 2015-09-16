@@ -39,7 +39,7 @@ func (c Call) GetCallerID() string {
 }
 
 type CallInQueue struct {
-	PhoneNumber string `param:"phone_number"`
+	PhoneNumber string `param:"phone_number" json:"phone_number"`
 	Country     string `param:"country"`
 }
 
