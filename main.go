@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "crypto/sha512"
 	_ "net/http/pprof"
 
 	"flag"
