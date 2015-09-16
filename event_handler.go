@@ -123,7 +123,7 @@ func BridgeEventHandler(m gami.Message) {
 	// 	return
 	// }
 	// callsCache.Map[channel] = struct{}{}
-
+	glog.Infoln(m)
 	if *savePhoneCalls && m["BridgeNumChannels"] == "1" {
 		fileName := util.GetPhoneCallFileName(conf.GetConf().Name, m["Uniqueid"], "wav")
 		fullFileName := fmt.Sprintf("%s/%s", conf.GetConf().FolderForCalls, fileName)
