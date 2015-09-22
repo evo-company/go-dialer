@@ -86,7 +86,9 @@ func sender(param interface{}) (gami.Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	return <-cbc, nil
+	resp, err := <-cbc, nil
+	glog.Infoln("Asterisk response", resp)
+	return resp, err
 }
 
 func getContext(innerNumber string) (string, error) {
@@ -137,6 +139,10 @@ func RemoveFromQueue(queue, innerNumber string) (gami.Message, error) {
 }
 
 func QueueStatus(queue, innerNumber string) (gami.Message, error) {
+	// Before getting new state in queue need to remove old one for case
+	// then number was in queue but was removed
+	QueueState.Remove(innerNumber)
+
 	m := gami.Message{
 		"Action": "QueueStatus",
 		"Queue":  queue,
@@ -148,9 +154,6 @@ func QueueStatus(queue, innerNumber string) (gami.Message, error) {
 	}
 
 	response := gami.Message{"Response": "success"}
-	// Before getting new state in queue need to remove old one for case
-	// then number was in queue but was removed
-	QueueState.Remove(innerNumber)
 	status := QueueState.Get(innerNumber, 1, "-1")
 
 	var responseStatus string
