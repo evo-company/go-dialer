@@ -16,18 +16,18 @@ import (
 const (
 	INSERT_CDR_STMT = `
 		INSERT INTO cdr (
-			caller_id, unique_id, inner_phone_number, opponent_phone_number, call_type, company_id, disposition,
+			status, caller_id, unique_id, inner_phone_number, opponent_phone_number, call_type, company_id, disposition,
 			start_time, billable_seconds, country_code
 		) values (
-			:caller_id, :unique_id, :inner_phone_number, :opponent_phone_number, :call_type, :company_id,
+			0, :caller_id, :unique_id, :inner_phone_number, :opponent_phone_number, :call_type, :company_id,
 			:disposition, :start_time, :billable_seconds, :country_code
 		)
 	`
 	INSER_PC_STMT   = "INSERT OR IGNORE INTO phone_call (unique_id) VALUES (:unique_id)"
 	GET_STMT        = "SELECT * FROM cdr where unique_id=$1"
 	DELETE_PC_STMT  = "DELETE FROM phone_call where id=:id"
-	DELETE_CDR_STMT = "DELETE FROM cdr where id=:id"
-	COUNT_CDR_STMT  = "SELECT count(*) from cdr"
+	DELETE_CDR_STMT = "UPDATE cdr set status = 1 where id=:id"
+	COUNT_CDR_STMT  = "SELECT count(*) from cdr where status = 0"
 	COUNT_PC_STMT   = "SELECT count(*) from phone_call"
 )
 
@@ -42,6 +42,7 @@ var (
 	schema = `
 	CREATE TABLE IF NOT EXISTS cdr (
 		id integer PRIMARY KEY AUTOINCREMENT,
+        status integer not null,
 		caller_id text not null,
 		unique_id text not null,
 		inner_phone_number text not null,
@@ -63,6 +64,7 @@ var (
 
 type CDR struct {
 	ID                  int    `db:"id"`
+	Status              int    `db:"status"`
 	UniqueID            string `db:"unique_id"`
 	CallerID            string `db:"caller_id"`
 	InnerPhoneNumber    string `db:"inner_phone_number"`
@@ -142,7 +144,7 @@ func (db *DBWrapper) SelectCDRs(limit int) ([]CDR, error) {
 	db.Lock()
 	defer db.Unlock()
 	cdrs := []CDR{}
-	rows, err := db.Queryx("SELECT * FROM cdr order by id desc limit $1", limit)
+	rows, err := db.Queryx("SELECT * FROM cdr where status = 0 order by id desc limit $1", limit)
 	if err != nil {
 		return nil, err
 	}
