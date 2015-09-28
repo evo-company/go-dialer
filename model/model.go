@@ -26,8 +26,9 @@ type CountrySettings struct {
 }
 
 type Call struct {
-	Inline string `param:"inline"`
-	Exten  string `param:"exten"`
+	Inline   string `param:"inline"`
+	Exten    string `param:"exten"`
+	UniqueId string `param:"uniqueId"`
 }
 
 func (c Call) GetChannel() string {
@@ -35,7 +36,7 @@ func (c Call) GetChannel() string {
 }
 
 func (c Call) GetCallerID() string {
-	return fmt.Sprintf("call_from_CRM <%v>", c.Inline)
+	return fmt.Sprintf("call_from_CRM:%v <%v>", c.UniqueId, c.Inline)
 }
 
 type CallInQueue struct {

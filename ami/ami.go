@@ -203,6 +203,6 @@ func CallInQueue(call model.CallInQueue) (gami.Message, error) {
 	o := gami.NewOriginate(queue, "manager",
 		strings.TrimPrefix(call.PhoneNumber, "+"), "1")
 	o.Async = true
-	o.CallerID = "<CallMeBack> 777"
+	o.CallerID = "777 <CallMeBack>"
 	return sender(o)
 }
