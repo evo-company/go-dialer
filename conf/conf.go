@@ -72,6 +72,7 @@ type Configuration struct {
 	CallBackQueuePrefix    string
 	CallBackQueueSufix     string
 	QuestionaryUrl         string
+	OutgoingContext        string
 }
 
 func (c Configuration) GetApi(country string, apiKey string) string {

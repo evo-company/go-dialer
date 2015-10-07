@@ -92,6 +92,11 @@ func sender(param interface{}) (gami.Message, error) {
 }
 
 func getContext(innerNumber string) (string, error) {
+	staticContext := conf.GetConf().OutgoingContext
+	if staticContext != "" {
+		return staticContext, nil
+	}
+
 	resp, err := sender(gami.Message{"Action": "SIPShowPeer", "Peer": innerNumber})
 	if err != nil {
 		return "", err
