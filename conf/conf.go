@@ -40,13 +40,13 @@ var (
 
 	PORTAL_MAP = map[string]PortalMap{
 		"local": PortalMap{
-			"ua": "http://192.168.17.101:5000/",
+			"ua": "",
 		},
 		"trunk": PortalMap{
-			"ua": "http://my.trunk.uaprom/",
-			"ru": "http://my.ru-trunk.uaprom/",
-			"kz": "http://my.kz-trunk.uaprom/",
-			"by": "http://my.by-trunk.uaprom/",
+			"ua": "",
+			"ru": "",
+			"kz": "",
+			"by": "",
 		},
 		"prod": PortalMap{
 			"ua": "https://my.prom.ua/",
@@ -55,7 +55,7 @@ var (
 			"kz": "https://my.satu.kz/",
 		},
 	}
-	ADMIN_PHONES = []string{"+380938677855", "+380637385529"}
+	ADMIN_PHONES = []string{}
 )
 
 type PortalMap map[string]string
@@ -126,7 +126,7 @@ func Alert(msg string) {
 	msg = fmt.Sprintf("%s: %s", conf.Name, msg)
 	for _, phone := range ADMIN_PHONES {
 		params := fmt.Sprintf("login=%s&passwd=%s&destaddr=%s&msgchrset=cyr&msgtext=%s",
-			"uaprominfo", "RVC18bfOLL", phone, msg)
+			"", "", phone, msg)
 		_, _, errs := gorequest.New().Get(url).Query(params).End()
 		if len(errs) != 0 {
 			for _, err := range errs {
